@@ -1,0 +1,56 @@
+# Set working directory
+setwd("/Users/diegolombardoisadie20252/Desktop/Analisys_Scripts/output")
+
+# 1. Load required libraries ----
+library(readxl)
+library(dplyr)
+library(table1)
+
+# 2. Load the Excel file (adjust path/filename)
+df <- read_excel("Data_Table1.xlsx")
+
+# 3. Convert PES and MVC to numeric (replace comma decimal with dot if needed)
+df <- df %>%
+  mutate(
+    PES = as.numeric(gsub(",", ".", as.character(PES))),
+    MVC = as.numeric(gsub(",", ".", as.character(MVC)))
+  )
+
+# 4. Convert all character columns (except grouping factor) to numeric, safely
+char_cols <- sapply(df, is.character)
+char_cols["Code_Group"] <- FALSE  # Exclude grouping factor
+
+df <- df %>%
+  mutate(across(.cols = which(char_cols), ~ as.numeric(gsub(",", ".", .))))
+
+# 5. Convert grouping variable to factor with labels
+df$Code_Group <- factor(df$Code_Group,
+                        levels = c(0, 1, 2),
+                        labels = c("Sedentary", "Average", "Sportif"))
+
+# 6. Assign labels for table1 (FIXED smart quotes)
+label(df$Age) <- "Age"
+label(df$FD_task1) <- "Framewise Displacement - Control"
+label(df$FD_task2) <- "Framewise Displacement - Isquemia"
+label(df$PES) <- "Perceived Effort Score (PES)"
+label(df$MVC) <- "Maximal Voluntary Contraction (MVC - Force)"
+
+label(df$t1_ROI_PM) <- "fMRI BOLD (Premotor) - Ischemia"
+label(df$t1_ROI_S1) <- "fMRI BOLD (S1) - Ischemia"
+label(df$t1_ROI_CC) <- "fMRI BOLD (Cingulate Cortex) - Ischemia"
+label(df$t1_ROI_SM) <- "fMRI BOLD (Supplementary Cortex) - Ischemia"
+
+label(df$t2_ROI_PM) <- "fMRI BOLD (Premotor) - Control"
+label(df$t2_ROI_S1) <- "fMRI BOLD (S1) - Control"
+label(df$t2_ROI_CC) <- "fMRI BOLD (Cingulate Cortex) - Control"
+label(df$t2_ROI_SM) <- "fMRI BOLD (Supplementary Cortex) - Control"
+
+# 7. Create publication-quality Table 1 grouped by Code_Group
+table1(
+  ~ Age + FD_task1 + FD_task2 + PES + MVC +
+    t1_ROI_PM + t1_ROI_S1 + t1_ROI_CC + t1_ROI_SM +
+    t2_ROI_PM + t2_ROI_S1 + t2_ROI_CC + t2_ROI_SM |
+    Code_Group,
+  data = df,
+  overall = FALSE
+)
