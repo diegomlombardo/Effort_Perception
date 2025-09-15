@@ -1,0 +1,44 @@
+% ------------ EFFECT SIZE PER PREDICTOR (Cohen's f²) ------------
+
+% Assuming:
+% X_clean = [bold_norm, head_norm];  % predictors without intercept
+% y_clean = pes_clean;                % outcome variable
+% group_names = {'premotor', 'supplementary', 'sensory', 'cingulate'};
+% num_groups = length(group_names);
+% stats(1) = R² of full model from regression (with intercept)
+%
+% We calculate effect size only for the ROI groups, excluding head motion.
+
+% Full design matrix with intercept:
+X_full = [ones(size(X_clean,1),1), X_clean];
+
+% Fit full model to get R² (if not already computed)
+[~, ~, ~, ~, stats] = regress(y_clean, X_full);
+R_squared_full = stats(1);
+
+f_squared_per_group = nan(1, num_groups);
+
+for g = 1:num_groups
+    % Remove ROI group g from predictors (columns 1 to num_groups in X_clean)
+    reduced_X = X_clean;
+    reduced_X(:, g) = [];  % remove ROI predictor g
+
+    % Include head motion column as is (assumed last column in X_clean)
+    % So if head motion is last column, it remains untouched
+    
+    % Add intercept
+    X_reduced = [ones(size(reduced_X,1), 1), reduced_X];
+
+    % Fit reduced model
+    [~, ~, ~, ~, reduced_stats] = regress(y_clean, X_reduced);
+    R_squared_reduced = reduced_stats(1);
+
+    % Calculate Cohen's f² effect size for predictor g
+    f_squared_per_group(g) = (R_squared_full - R_squared_reduced) / (1 - R_squared_full);
+end
+
+% Output per-group effect sizes
+fprintf('\n--- Effect Sizes per ROI group (Cohen''s f²) ---\n');
+for g = 1:num_groups
+    fprintf('%s: f² = %.4f\n', group_names{g}, f_squared_per_group(g));
+end
