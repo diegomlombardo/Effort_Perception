@@ -1,0 +1,76 @@
+% ----------- PLOT REGRESSION WITH CENTERED BOTTOM ROW -----------
+
+% Pretty names for display
+pretty_names = containers.Map( ...
+    {'premotor', 'supplementary', 'sensory', 'cingulate', 'insula'}, ...
+    {'Premotor Cortex', 'Supplementary Motor Area', ...
+     'Primary Sensory Cortex', 'Cingulate Cortex', 'Insula'});
+
+figure('Color','w','Position',[100 100 1600 900]);
+
+% Define subplot positions manually for a 3+2 grid with centered bottom row
+axes_pos = {
+    [0.08 0.58 0.25 0.35],  % Top left
+    [0.375 0.58 0.25 0.35], % Top middle
+    [0.67 0.58 0.25 0.35],  % Top right
+    [0.23 0.1 0.25 0.35],   % Bottom left (centered)
+    [0.52 0.1 0.25 0.35]    % Bottom right (centered)
+};
+
+for g = 1:num_groups
+    ax = axes('Position', axes_pos{g});  % manual position for subplot
+
+    x = X_norm(:, g);
+    y = y_clean;
+
+    % Residualize x and y
+    ctrl_vars = setdiff(1:num_groups, g);
+    X_ctrl = [X_norm(:, ctrl_vars), head_norm];
+    X_ctrl_aug = [ones(size(X_ctrl,1),1), X_ctrl];
+
+    resid_x = x - X_ctrl_aug * (X_ctrl_aug \ x);
+    resid_y = y - X_ctrl_aug * (X_ctrl_aug \ y);
+
+    % Fit simple regression
+    b_simple = regress(resid_y, [ones(length(resid_x),1), resid_x]);
+    x_fit = linspace(min(resid_x), max(resid_x), 100)';
+    y_fit = b_simple(1) + b_simple(2)*x_fit;
+
+    % Confidence interval
+    y_pred = b_simple(1) + b_simple(2)*resid_x;
+    resid = resid_y - y_pred;
+    s_err = sqrt(sum(resid.^2) / (length(resid_x)-2));
+    x_mean = mean(resid_x);
+    Sxx = sum((resid_x - x_mean).^2);
+    se_fit = s_err * sqrt(1/length(resid_x) + (x_fit - x_mean).^2 / Sxx);
+    t_val = tinv(0.975, length(resid_x)-2);
+    ci_upper = y_fit + t_val*se_fit;
+    ci_lower = y_fit - t_val*se_fit;
+
+    % Plot shaded confidence interval
+    fill([x_fit; flipud(x_fit)], [ci_upper; flipud(ci_lower)], ...
+        [0.9 0.92 1], 'EdgeColor', 'none'); hold on;
+    
+    % Plot regression line and scatter
+    plot(x_fit, y_fit, 'b-', 'LineWidth', 3);
+    scatter(resid_x, resid_y, 120, 'filled', ...
+        'MarkerFaceColor', [0.1 0.2 0.7], 'MarkerFaceAlpha', 0.75);
+
+    % Stats
+    r_simple = corr(resid_x, resid_y);
+    R2_simple = r_simple^2;
+    t_stat = b_simple(2)/sqrt(sum(resid.^2)/((length(resid_x)-2)*Sxx));
+    p_val = 2*(1 - tcdf(abs(t_stat), length(resid_x)-2));
+    stars_str = reg_stars{g};
+
+    % Labels and aesthetics
+    roi_name = pretty_names(group_names{g});
+    title(sprintf('%s\n\\beta=%.3f, R^2=%.3f, p=%.3f %s', ...
+        roi_name, b_simple(2), R2_simple, p_val, stars_str), ...
+        'FontSize', 18, 'FontWeight', 'bold');
+    
+    xlabel([roi_name ' (Residualized)'], 'FontSize', 16);
+    ylabel('PES Total (Residualized)', 'FontSize', 16);
+    
+    set(gca, 'FontSize', 14, 'LineWidth', 2, 'Box', 'on');
+end
