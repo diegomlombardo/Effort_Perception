@@ -1,277 +1,142 @@
-
-% Subjects and force column
-baseDir = 'Data_Force';
+% Set base directory (change to your absolute path if needed)
+baseDir = '/Users/diegolombardoisadie20252/Desktop/Analisys_Scripts/output/Data_Force';
 nSubjects = 47;
 excludeSubjects = [1, 9, 35];
 forceCol = 3;
 
-meanPeakDiffs = nan(nSubjects,1);  % use NaN for easier filtering
-
-for subj = 1:nSubjects
-    if ismember(subj, excludeSubjects)
-        continue
-    end
-
-    subjID = sprintf('Sub_%02d', subj);
-    task1File = fullfile(baseDir, subjID, 'Task1.txt');
-    
-    if ~isfile(task1File)
-        warning('Missing Task1.txt for %s, skipping.', subjID);
-        continue
-    end
-    
-    data = readmatrix(task1File);
-    if size(data, 2) < forceCol
-        warning('Not enough columns for %s, skipping.', subjID);
-        continue
-    end
-    
-    force = data(:,forceCol);
-
-    % Find peaks and troughs
-    [pks_max, locs_max] = findpeaks(force);
-    [pks_min, locs_min] = findpeaks(-force);
-    pks_min = -pks_min;
-    
-    % Combine and sort
-    peakVals = [pks_max; pks_min];
-    peakLocs = [locs_max; locs_min];
-    [peakLocsSorted, sortIdx] = sort(peakLocs);
-    peakValsSorted = peakVals(sortIdx);
-
-    % Calculate absolute differences between consecutive peaks/troughs
-    diffs = abs(diff(peakValsSorted));
-    
-    % Mean peak-to-peak difference
-    meanPeakDiffs(subj) = mean(diffs);
-end
-
-% Filter out excluded subjects (NaNs)
-validIdx = ~isnan(meanPeakDiffs);
-subjectsIncluded = find(validIdx);
-meanDiffsIncluded = meanPeakDiffs(validIdx);
-
-% Display subject by subject
-for i = 1:length(subjectsIncluded)
-    fprintf('Subject %02d: Mean peak-to-peak difference = %.3f\n', ...
-        subjectsIncluded(i), meanDiffsIncluded(i));
-end
-
-
-% Subjects and force column
-baseDir = 'Data_Force';
-nSubjects = 47;
-excludeSubjects = [1, 9, 35];
-forceCol = 3;
-
-meanPeakDiffs_Task2 = nan(nSubjects,1);  % use NaN for easier filtering
-
-for subj = 1:nSubjects
-    if ismember(subj, excludeSubjects)
-        continue
-    end
-
-    subjID = sprintf('Sub_%02d', subj);
-    task2File = fullfile(baseDir, subjID, 'Task2.txt');
-    
-    if ~isfile(task2File)
-        warning('Missing Task2.txt for %s, skipping.', subjID);
-        continue
-    end
-    
-    data = readmatrix(task2File);
-    if size(data, 2) < forceCol
-        warning('Not enough columns for %s, skipping.', subjID);
-        continue
-    end
-    
-    force = data(:,forceCol);
-
-    % Find peaks and troughs
-    [pks_max, locs_max] = findpeaks(force);
-    [pks_min, locs_min] = findpeaks(-force);
-    pks_min = -pks_min;
-    
-    % Combine and sort
-    peakVals = [pks_max; pks_min];
-    peakLocs = [locs_max; locs_min];
-    [peakLocsSorted, sortIdx] = sort(peakLocs);
-    peakValsSorted = peakVals(sortIdx);
-
-    % Calculate absolute differences between consecutive peaks/troughs
-    diffs = abs(diff(peakValsSorted));
-    
-    % Mean peak-to-peak difference
-    meanPeakDiffs_Task2(subj) = mean(diffs);
-end
-
-% Filter out excluded subjects (NaNs)
-validIdx = ~isnan(meanPeakDiffs_Task2);
-subjectsIncluded = find(validIdx);
-meanDiffsIncluded = meanPeakDiffs_Task2(validIdx);
-
-% Display subject by subject
-for i = 1:length(subjectsIncluded)
-    fprintf('Subject %02d: Mean peak-to-peak difference (Task 2) = %.3f\n', ...
-        subjectsIncluded(i), meanDiffsIncluded(i));
-end
-% Subjects and force column
-baseDir = 'Data_Force';
-nSubjects = 47;
-excludeSubjects = [1, 9, 35];
-forceCol = 3;
-
-meanPeakDiffs_MVC = nan(nSubjects,1);  % use NaN for easier filtering
-
-for subj = 1:nSubjects
-    if ismember(subj, excludeSubjects)
-        continue
-    end
-
-    subjID = sprintf('Sub_%02d', subj);
-    mvcFile = fullfile(baseDir, subjID, 'MVC.txt');
-    
-    if ~isfile(mvcFile)
-        warning('Missing MVC.txt for %s, skipping.', subjID);
-        continue
-    end
-    
-    data = readmatrix(mvcFile);
-    if size(data, 2) < forceCol
-        warning('Not enough columns for %s, skipping.', subjID);
-        continue
-    end
-    
-    force = data(:,forceCol);
-
-    % Find peaks and troughs
-    [pks_max, locs_max] = findpeaks(force);
-    [pks_min, locs_min] = findpeaks(-force);
-    pks_min = -pks_min;
-    
-    % Combine and sort
-    peakVals = [pks_max; pks_min];
-    peakLocs = [locs_max; locs_min];
-    [peakLocsSorted, sortIdx] = sort(peakLocs);
-    peakValsSorted = peakVals(sortIdx);
-
-    % Calculate absolute differences between consecutive peaks/troughs
-    diffs = abs(diff(peakValsSorted));
-    
-    % Mean peak-to-peak difference
-    meanPeakDiffs_MVC(subj) = mean(diffs);
-end
-
-% Filter out excluded subjects (NaNs)
-validIdx = ~isnan(meanPeakDiffs_MVC);
-subjectsIncluded = find(validIdx);
-meanDiffsIncluded = meanPeakDiffs_MVC(validIdx);
-
-% Display subject by subject
-for i = 1:length(subjectsIncluded)
-    fprintf('Subject %02d: Mean peak-to-peak difference (MVC) = %.3f\n', ...
-        subjectsIncluded(i), meanDiffsIncluded(i));
-end
-
-
-
-% Subjects and force column
-baseDir = 'Data_Force';
-nSubjects = 47;
-excludeSubjects = [1, 9, 35];
-forceCol = 3;
-
-% Initialize arrays
+% Initialize results arrays
 meanPeakDiffs_MVC = nan(nSubjects,1);
 meanPeakDiffs_Task1 = nan(nSubjects,1);
 meanPeakDiffs_Task2 = nan(nSubjects,1);
 
 for subj = 1:nSubjects
     if ismember(subj, excludeSubjects)
+        fprintf('Subject %02d excluded.\n', subj);
         continue
     end
 
     subjID = sprintf('Sub_%02d', subj);
+    fprintf('Processing %s...\n', subjID);
     
-    % MVC
+    %% --- MVC ---
     mvcFile = fullfile(baseDir, subjID, 'MVC.txt');
     if isfile(mvcFile)
         data = readmatrix(mvcFile);
+        fprintf('MVC data size: %d x %d\n', size(data));
         if size(data, 2) >= forceCol
-            force = data(:,forceCol);
+            force = data(:, forceCol);
+            
+            % Find peaks and troughs
             [pks_max, locs_max] = findpeaks(force);
             [pks_min, locs_min] = findpeaks(-force);
             pks_min = -pks_min;
+
             peakVals = [pks_max; pks_min];
             peakLocs = [locs_max; locs_min];
-            [peakLocsSorted, sortIdx] = sort(peakLocs);
-            peakValsSorted = peakVals(sortIdx);
-            diffs = abs(diff(peakValsSorted));
-            meanPeakDiffs_MVC(subj) = mean(diffs);
+            
+            if isempty(peakVals) || length(peakVals) < 2
+                warning('MVC peaks/troughs insufficient for %s.', subjID);
+                meanPeakDiffs_MVC(subj) = NaN;
+            else
+                [peakLocsSorted, sortIdx] = sort(peakLocs);
+                peakValsSorted = peakVals(sortIdx);
+                diffs = abs(diff(peakValsSorted));
+                meanPeakDiffs_MVC(subj) = mean(diffs);
+            end
+        else
+            warning('MVC file has insufficient columns for %s.', subjID);
         end
+    else
+        warning('MVC file missing for %s.', subjID);
     end
-
-    % Task 1
+    
+    %% --- Task 1 ---
     task1File = fullfile(baseDir, subjID, 'Task1.txt');
     if isfile(task1File)
         data = readmatrix(task1File);
+        fprintf('Task1 data size: %d x %d\n', size(data));
         if size(data, 2) >= forceCol
-            force = data(:,forceCol);
+            force = data(:, forceCol);
+            
+            % Find peaks and troughs
             [pks_max, locs_max] = findpeaks(force);
             [pks_min, locs_min] = findpeaks(-force);
             pks_min = -pks_min;
+
             peakVals = [pks_max; pks_min];
             peakLocs = [locs_max; locs_min];
-            [peakLocsSorted, sortIdx] = sort(peakLocs);
-            peakValsSorted = peakVals(sortIdx);
-            diffs = abs(diff(peakValsSorted));
-            meanPeakDiffs_Task1(subj) = mean(diffs);
+            
+            if isempty(peakVals) || length(peakVals) < 2
+                warning('Task1 peaks/troughs insufficient for %s.', subjID);
+                meanPeakDiffs_Task1(subj) = NaN;
+            else
+                [peakLocsSorted, sortIdx] = sort(peakLocs);
+                peakValsSorted = peakVals(sortIdx);
+                diffs = abs(diff(peakValsSorted));
+                meanPeakDiffs_Task1(subj) = mean(diffs);
+            end
+        else
+            warning('Task1 file has insufficient columns for %s.', subjID);
         end
+    else
+        warning('Task1 file missing for %s.', subjID);
     end
-
-    % Task 2
+    
+    %% --- Task 2 ---
     task2File = fullfile(baseDir, subjID, 'Task2.txt');
     if isfile(task2File)
         data = readmatrix(task2File);
+        fprintf('Task2 data size: %d x %d\n', size(data));
         if size(data, 2) >= forceCol
-            force = data(:,forceCol);
+            force = data(:, forceCol);
+            
+            % Find peaks and troughs
             [pks_max, locs_max] = findpeaks(force);
             [pks_min, locs_min] = findpeaks(-force);
             pks_min = -pks_min;
+
             peakVals = [pks_max; pks_min];
             peakLocs = [locs_max; locs_min];
-            [peakLocsSorted, sortIdx] = sort(peakLocs);
-            peakValsSorted = peakVals(sortIdx);
-            diffs = abs(diff(peakValsSorted));
-            meanPeakDiffs_Task2(subj) = mean(diffs);
+            
+            if isempty(peakVals) || length(peakVals) < 2
+                warning('Task2 peaks/troughs insufficient for %s.', subjID);
+                meanPeakDiffs_Task2(subj) = NaN;
+            else
+                [peakLocsSorted, sortIdx] = sort(peakLocs);
+                peakValsSorted = peakVals(sortIdx);
+                diffs = abs(diff(peakValsSorted));
+                meanPeakDiffs_Task2(subj) = mean(diffs);
+            end
+        else
+            warning('Task2 file has insufficient columns for %s.', subjID);
         end
+    else
+        warning('Task2 file missing for %s.', subjID);
     end
 end
 
-% Calculate percentage changes relative to MVC
+% Filter valid subjects (non-NaN and non-zero MVC)
 validIdx = ~isnan(meanPeakDiffs_MVC) & (meanPeakDiffs_MVC ~= 0) & ...
            ~isnan(meanPeakDiffs_Task1) & ~isnan(meanPeakDiffs_Task2);
 
 subjectsIncluded = find(validIdx);
 
-percentChange_Task1 = 100 * ((meanPeakDiffs_Task1(validIdx) - meanPeakDiffs_MVC(validIdx)) ./ meanPeakDiffs_MVC(validIdx)) + 100;
-percentChange_Task2 = 100 * ((meanPeakDiffs_Task2(validIdx) - meanPeakDiffs_MVC(validIdx)) ./ meanPeakDiffs_MVC(validIdx)) + 100;
+% Calculate percent changes relative to MVC (standard formula)
+percentChange_Task1 = 100 * ((meanPeakDiffs_Task1(validIdx) - meanPeakDiffs_MVC(validIdx)) ./ meanPeakDiffs_MVC(validIdx));
+percentChange_Task2 = 100 * ((meanPeakDiffs_Task2(validIdx) - meanPeakDiffs_MVC(validIdx)) ./ meanPeakDiffs_MVC(validIdx));
 
-% Display results
-fprintf('Subject\tAdjusted %% Change Task1 vs MVC\tAdjusted %% Change Task2 vs MVC\n');
+% Display percent change results
+fprintf('\nSubject\t%% Change Task1 vs MVC\t%% Change Task2 vs MVC\n');
 for i = 1:length(subjectsIncluded)
-    fprintf('Sub_%02d\t%.2f%%\t\t\t\t\t%.2f%%\n', ...
+    fprintf('Sub_%02d\t%.2f%%\t\t\t%.2f%%\n', ...
         subjectsIncluded(i), percentChange_Task1(i), percentChange_Task2(i));
 end
 
 % --- Outlier detection ---
 outlier_control = isoutlier(percentChange_Task1, 'quartiles');
 outlier_condition = isoutlier(percentChange_Task2, 'quartiles');
-
-% Remove any subject that is an outlier in either group
 combined_outliers = outlier_control | outlier_condition;
 
-% Remove outliers from both groups
 clean_Control = percentChange_Task1(~combined_outliers);
 clean_Condition = percentChange_Task2(~combined_outliers);
 
@@ -288,28 +153,19 @@ else
     fprintf('=> No significant difference between Control and Ischemia-Induced Paralysis.\n');
 end
 
-
-% Combine data
+% --- Boxplot ---
 data = [clean_Control(:); clean_Condition(:)];
 group = [repmat({'Control'}, length(clean_Control), 1); ...
          repmat({'Ischemia-Induced Paralysis'}, length(clean_Condition), 1)];
 
-% Create boxplot
 figure('Color','w');
 boxplot(data, group, 'Widths', 0.5, 'Colors', 'k', ...
         'Symbol', 'o', 'OutlierSize', 4, 'BoxStyle', 'outline');
-
-% Style plot
 ylabel('Percent Change from MVC (%)', 'FontSize', 12);
 title('Peak-to-Peak Force Change: Control vs Ischemia-Induced Paralysis', 'FontSize', 14);
 set(gca, 'FontSize', 12);
-box on;
-grid on;
+box on; grid on;
 
-% Overlay per-subject lines
 hold on;
 plot([1, 2], [clean_Control(:), clean_Condition(:)]', '-o', ...
     'Color', [0.5 0.5 0.5 0.3], 'MarkerFaceColor', 'k');
-
-% Optional: Save figure
-% saveas(gcf, 'PercentChange_Boxplot_Control_vs_Condition.png');
