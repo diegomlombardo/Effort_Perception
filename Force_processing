@@ -1,10 +1,10 @@
-% Set base directory (change to your absolute path if needed)
+% --- Set base directory (change to your absolute path if needed)
 baseDir = '/Users/diegolombardoisadie20252/Desktop/Analisys_Scripts/output/Data_Force';
 nSubjects = 47;
 excludeSubjects = [1, 9, 35];
 forceCol = 3;
 
-% Initialize results arrays
+% --- Initialize results arrays
 meanPeakDiffs_MVC = nan(nSubjects,1);
 meanPeakDiffs_Task1 = nan(nSubjects,1);
 meanPeakDiffs_Task2 = nan(nSubjects,1);
@@ -115,57 +115,61 @@ for subj = 1:nSubjects
     end
 end
 
-% Filter valid subjects (non-NaN and non-zero MVC)
+% --- Filter valid subjects (non-NaN and non-zero MVC)
 validIdx = ~isnan(meanPeakDiffs_MVC) & (meanPeakDiffs_MVC ~= 0) & ...
            ~isnan(meanPeakDiffs_Task1) & ~isnan(meanPeakDiffs_Task2);
 
 subjectsIncluded = find(validIdx);
 
-% Calculate percent changes relative to MVC (standard formula)
+% --- Calculate percent changes relative to MVC (standard formula)
 percentChange_Task1 = 100 * ((meanPeakDiffs_Task1(validIdx) - meanPeakDiffs_MVC(validIdx)) ./ meanPeakDiffs_MVC(validIdx));
 percentChange_Task2 = 100 * ((meanPeakDiffs_Task2(validIdx) - meanPeakDiffs_MVC(validIdx)) ./ meanPeakDiffs_MVC(validIdx));
 
-% Display percent change results
-fprintf('\nSubject\t%% Change Task1 vs MVC\t%% Change Task2 vs MVC\n');
+% --- ADD 100 to convert to scale with baseline 100%
+scale_Task1 = 100 + percentChange_Task1;
+scale_Task2 = 100 + percentChange_Task2;
+
+% --- Display scale results ---
+fprintf('\nSubject\tTask1 Scale (%%)\tTask2 Scale (%%)\n');
 for i = 1:length(subjectsIncluded)
-    fprintf('Sub_%02d\t%.2f%%\t\t\t%.2f%%\n', ...
-        subjectsIncluded(i), percentChange_Task1(i), percentChange_Task2(i));
+    fprintf('Sub_%02d\t%.2f%%\t\t%.2f%%\n', ...
+        subjectsIncluded(i), scale_Task1(i), scale_Task2(i));
 end
 
 % --- Outlier detection ---
-outlier_control = isoutlier(percentChange_Task1, 'quartiles');
-outlier_condition = isoutlier(percentChange_Task2, 'quartiles');
+outlier_control = isoutlier(scale_Task1, 'quartiles');
+outlier_condition = isoutlier(scale_Task2, 'quartiles');
 combined_outliers = outlier_control | outlier_condition;
 
-clean_Control = percentChange_Task1(~combined_outliers);
-clean_Condition = percentChange_Task2(~combined_outliers);
+clean_Task1 = scale_Task1(~combined_outliers);
+clean_Task2 = scale_Task2(~combined_outliers);
 
 fprintf('Removed %d subjects due to outliers.\n', sum(combined_outliers));
 
 % --- Paired t-test ---
-[h, p, ci, stats] = ttest(clean_Control, clean_Condition);
+[h, p, ci, stats] = ttest(clean_Task1, clean_Task2);
 
 fprintf('\nPaired t-test (after outlier removal):\n');
 fprintf('t(%d) = %.2f, p = %.4f\n', stats.df, stats.tstat, p);
 if h
-    fprintf('=> Significant difference between Control and Ischemia-Induced Paralysis.\n');
+    fprintf('=> Significant difference between Task 1 and Task 2.\n');
 else
-    fprintf('=> No significant difference between Control and Ischemia-Induced Paralysis.\n');
+    fprintf('=> No significant difference between Task 1 and Task 2.\n');
 end
 
 % --- Boxplot ---
-data = [clean_Control(:); clean_Condition(:)];
-group = [repmat({'Control'}, length(clean_Control), 1); ...
-         repmat({'Ischemia-Induced Paralysis'}, length(clean_Condition), 1)];
+data = [clean_Task1(:); clean_Task2(:)];
+group = [repmat({'Task 1'}, length(clean_Task1), 1); ...
+         repmat({'Task 2'}, length(clean_Task2), 1)];
 
 figure('Color','w');
 boxplot(data, group, 'Widths', 0.5, 'Colors', 'k', ...
         'Symbol', 'o', 'OutlierSize', 4, 'BoxStyle', 'outline');
-ylabel('Percent Change from MVC (%)', 'FontSize', 12);
-title('Peak-to-Peak Force Change: Control vs Ischemia-Induced Paralysis', 'FontSize', 14);
+ylabel('Force Scale (% of MVC)', 'FontSize', 12);
+title('Force Scale Comparison: Task 1 vs Task 2', 'FontSize', 14);
 set(gca, 'FontSize', 12);
 box on; grid on;
 
 hold on;
-plot([1, 2], [clean_Control(:), clean_Condition(:)]', '-o', ...
+plot([1, 2], [clean_Task1(:), clean_Task2(:)]', '-o', ...
     'Color', [0.5 0.5 0.5 0.3], 'MarkerFaceColor', 'k');
