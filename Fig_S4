@@ -1,0 +1,114 @@
+library(readxl)
+library(dplyr)
+library(ggplot2)
+library(cowplot)
+
+# --- Load and clean data ---
+data <- read_excel("Master_Data_Base.xlsx")
+
+# Columns to convert to numeric
+cols_to_convert <- c("t1_ROI_S1", "t2_ROI_S1", "Force_Task1", "Force_task2", "MVC")
+
+data <- data %>%
+  mutate(across(all_of(cols_to_convert), ~ suppressWarnings(as.numeric(.)))) %>%
+  filter(if_all(all_of(cols_to_convert), ~ !is.na(.) & !is.nan(.)))
+
+# --- Outlier removal function ---
+remove_outliers <- function(df, vars, threshold = 3) {
+  for (var in vars) {
+    mean_val <- mean(df[[var]], na.rm = TRUE)
+    sd_val <- sd(df[[var]], na.rm = TRUE)
+    lower_bound <- mean_val - threshold * sd_val
+    upper_bound <- mean_val + threshold * sd_val
+    df <- df %>% filter(df[[var]] >= lower_bound & df[[var]] <= upper_bound)
+  }
+  df
+}
+
+vars_to_check <- c("t1_ROI_S1", "t2_ROI_S1", "Force_Task1", "Force_task2", "MVC")
+data_no_outliers <- remove_outliers(data, vars_to_check)
+
+# --- Permutation test function ---
+perm_test_spearman <- function(x, y, n_perm = 10000) {
+  obs_cor <- cor(x, y, method = "spearman", use = "complete.obs")
+  n <- length(x)
+  perm_cor <- numeric(n_perm)
+  for (i in 1:n_perm) {
+    perm_y <- sample(y, size = n, replace = FALSE)
+    perm_cor[i] <- cor(x, perm_y, method = "spearman", use = "complete.obs")
+  }
+  p_value <- mean(abs(perm_cor) >= abs(obs_cor))
+  list(correlation = obs_cor, p_value = p_value)
+}
+
+# --- Run correlations ---
+results <- list(
+  t1_force1 = perm_test_spearman(data_no_outliers$t1_ROI_S1, data_no_outliers$Force_Task1),
+  t1_force2 = perm_test_spearman(data_no_outliers$t1_ROI_S1, data_no_outliers$Force_task2),
+  t1_mvc    = perm_test_spearman(data_no_outliers$t1_ROI_S1, data_no_outliers$MVC),
+  t2_force1 = perm_test_spearman(data_no_outliers$t2_ROI_S1, data_no_outliers$Force_Task1),
+  t2_force2 = perm_test_spearman(data_no_outliers$t2_ROI_S1, data_no_outliers$Force_task2),
+  t2_mvc    = perm_test_spearman(data_no_outliers$t2_ROI_S1, data_no_outliers$MVC)
+)
+
+# Adjust p-values with FDR correction
+raw_pvals <- sapply(results, function(x) x$p_value)
+adj_pvals <- p.adjust(raw_pvals, method = "BH")
+
+for (i in seq_along(results)) {
+  results[[i]]$p_adj <- adj_pvals[i]
+}
+
+# --- Plotting function without plot titles ---
+make_scatter_plot <- function(df, xvar, yvar, cor_res, pval_adj, xlab, ylab) {
+  rho <- round(cor_res, 3)
+  sig_marker <- ifelse(pval_adj < 0.05, "*", "n.s.")
+  
+  ggplot(df, aes_string(x = xvar, y = yvar)) +
+    geom_point(color = "#0072B2", size = 2, alpha = 0.7) +
+    geom_smooth(method = "lm", se = FALSE, color = "#D55E00", size = 1) +
+    theme_minimal(base_size = 12) +
+    theme(
+      axis.title = element_text(face = "bold", size = 12),
+      axis.text = element_text(size = 10),
+      plot.caption = element_text(hjust = 0.5, face = "italic", size = 10),
+      plot.margin = unit(c(1, 1, 1, 1), "lines")
+    ) +
+    labs(
+      x = xlab,
+      y = ylab,
+      caption = paste0("Spearman's rho = ", rho, " ", sig_marker)
+    )
+}
+
+# --- Axis labels with your requested names ---
+xlab_t1 <- "fMRI BOLD at S1 in Control condition"
+xlab_t2 <- "fMRI BOLD at S1 under Isquemia"
+
+# --- Generate plots without titles ---
+p1 <- make_scatter_plot(data_no_outliers, "t1_ROI_S1", "Force_Task1", 
+                        results$t1_force1$correlation, results$t1_force1$p_adj,
+                        xlab_t1, "Force_Task1")
+
+p2 <- make_scatter_plot(data_no_outliers, "t1_ROI_S1", "Force_task2", 
+                        results$t1_force2$correlation, results$t1_force2$p_adj,
+                        xlab_t1, "Force_task2")
+
+p3 <- make_scatter_plot(data_no_outliers, "t1_ROI_S1", "MVC", 
+                        results$t1_mvc$correlation, results$t1_mvc$p_adj,
+                        xlab_t1, "MVC")
+
+p4 <- make_scatter_plot(data_no_outliers, "t2_ROI_S1", "Force_Task1", 
+                        results$t2_force1$correlation, results$t2_force1$p_adj,
+                        xlab_t2, "Force_Task1")
+
+p5 <- make_scatter_plot(data_no_outliers, "t2_ROI_S1", "Force_task2", 
+                        results$t2_force2$correlation, results$t2_force2$p_adj,
+                        xlab_t2, "Force_task2")
+
+p6 <- make_scatter_plot(data_no_outliers, "t2_ROI_S1", "MVC", 
+                        results$t2_mvc$correlation, results$t2_mvc$p_adj,
+                        xlab_t2, "MVC")
+
+# --- Arrange plots ---
+plot_grid(p1, p2, p3, p4, p5, p6, ncol = 2, align = "hv")
