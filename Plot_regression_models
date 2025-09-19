@@ -69,7 +69,7 @@ for g = 1:num_groups
         roi_name, b_simple(2), R2_simple, p_val, stars_str), ...
         'FontSize', 18, 'FontWeight', 'bold');
     
-    xlabel([roi_name ' (Residualized)'], 'FontSize', 16);
+    xlabel(['Normalized BOLD fMRI signal at the ' roi_name], 'FontSize', 16);
     ylabel('PES Total (Residualized)', 'FontSize', 16);
     
     set(gca, 'FontSize', 14, 'LineWidth', 2, 'Box', 'on');
