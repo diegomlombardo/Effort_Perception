@@ -1,76 +1,132 @@
-% ----------- PLOT REGRESSION WITH CENTERED BOTTOM ROW -----------
+% ----------- PRETTY NAMES FOR PLOTS -----------
 
-% Pretty names for display
 pretty_names = containers.Map( ...
     {'premotor', 'supplementary', 'sensory', 'cingulate', 'insula'}, ...
-    {'Premotor Cortex', 'Supplementary Motor Area', ...
-     'Primary Sensory Cortex', 'Cingulate Cortex', 'Insula'});
+    {'Premotor Cortex', 'Supplementary Motor Area', 'Primary Sensory Cortex', 'Cingulate Cortex', 'Insular Cortex'});
+
+% ----------- FIGURE SETUP -----------
 
 figure('Color','w','Position',[100 100 1600 900]);
 
-% Define subplot positions manually for a 3+2 grid with centered bottom row
-axes_pos = {
-    [0.08 0.58 0.25 0.35],  % Top left
-    [0.375 0.58 0.25 0.35], % Top middle
-    [0.67 0.58 0.25 0.35],  % Top right
-    [0.23 0.1 0.25 0.35],   % Bottom left (centered)
-    [0.52 0.1 0.25 0.35]    % Bottom right (centered)
-};
+num_groups = length(group_names);
 
-for g = 1:num_groups
-    ax = axes('Position', axes_pos{g});  % manual position for subplot
+% ----------- CUSTOM LAYOUT CONFIG CENTERED HORIZONTALLY -----------
 
+num_cols = 3;
+num_rows = 2;
+total_panels = num_groups;
+
+% Sizes and spacings (adjusted)
+panel_w = 0.22;      % subplot width (narrower for margin)
+panel_h = 0.38;      % subplot height
+h_spacing = 0.07;    % horizontal spacing between subplots
+v_spacing = 0.12;    % vertical spacing between rows
+
+% Calculate total width of grid (3 panels + 2 gaps)
+total_width = num_cols*panel_w + (num_cols-1)*h_spacing;
+
+% Left margin to center grid horizontally (normalized 0 to 1)
+left_start = (1 - total_width) / 2;
+
+% Bottom position for top row of subplots
+bottom_start = 0.55;
+
+% ----------- PLOTTING LOOP -----------
+
+for g = 1:total_panels
+    if g <= 3
+        row = 1;
+        col = g;
+    else
+        row = 2;
+        if total_panels == 5
+            col = g - 3 + 0.5; % center bottom row for 5 plots
+        else
+            col = g - 3;
+        end
+    end
+
+    % Calculate subplot position
+    left = left_start + (col - 1)*(panel_w + h_spacing);
+    bottom = bottom_start - (row - 1)*(panel_h + v_spacing);
+
+    % Create subplot axes manually for perfect control
+    ax = axes('Position', [left, bottom, panel_w, panel_h]);
+
+    % Residualized predictor and outcome
     x = X_norm(:, g);
     y = y_clean;
+    x = x(:);
+    y = y(:);
 
-    % Residualize x and y
+    % Control variables for residualizing
     ctrl_vars = setdiff(1:num_groups, g);
     X_ctrl = [X_norm(:, ctrl_vars), head_norm];
     X_ctrl_aug = [ones(size(X_ctrl,1),1), X_ctrl];
 
-    resid_x = x - X_ctrl_aug * (X_ctrl_aug \ x);
-    resid_y = y - X_ctrl_aug * (X_ctrl_aug \ y);
+    beta_x = X_ctrl_aug \ x;
+    beta_y = X_ctrl_aug \ y;
 
-    % Fit simple regression
+    resid_x = x - X_ctrl_aug * beta_x;
+    resid_y = y - X_ctrl_aug * beta_y;
+
+    % Simple regression on residuals
     b_simple = regress(resid_y, [ones(length(resid_x),1), resid_x]);
+
     x_fit = linspace(min(resid_x), max(resid_x), 100)';
     y_fit = b_simple(1) + b_simple(2)*x_fit;
 
-    % Confidence interval
-    y_pred = b_simple(1) + b_simple(2)*resid_x;
-    resid = resid_y - y_pred;
-    s_err = sqrt(sum(resid.^2) / (length(resid_x)-2));
+    % Calculate standard error for shaded error bars
+    y_pred_simple = b_simple(1) + b_simple(2)*resid_x;
+    resid_simple = resid_y - y_pred_simple;
+    s_err = sqrt(sum(resid_simple.^2) / (length(resid_x)-2));
+
     x_mean = mean(resid_x);
     Sxx = sum((resid_x - x_mean).^2);
-    se_fit = s_err * sqrt(1/length(resid_x) + (x_fit - x_mean).^2 / Sxx);
     t_val = tinv(0.975, length(resid_x)-2);
+
     ci_upper = y_fit + t_val*se_fit;
     ci_lower = y_fit - t_val*se_fit;
 
-    % Plot shaded confidence interval
+    % --- Plot shaded confidence interval ---
     fill([x_fit; flipud(x_fit)], [ci_upper; flipud(ci_lower)], ...
-        [0.9 0.92 1], 'EdgeColor', 'none'); hold on;
-    
-    % Plot regression line and scatter
-    plot(x_fit, y_fit, 'b-', 'LineWidth', 3);
-    scatter(resid_x, resid_y, 120, 'filled', ...
-        'MarkerFaceColor', [0.1 0.2 0.7], 'MarkerFaceAlpha', 0.75);
+         [0.75 0.85 0.95], 'EdgeColor', 'none', 'FaceAlpha', 0.28);
+    hold on;
 
-    % Stats
+    % --- Plot regression line ---
+    plot(x_fit, y_fit, 'Color', [0 0.2 0.6], 'LineWidth', 2.8);
+
+    % --- Scatter points with elegant transparent orange fill and solid orange edges ---
+    scatter(resid_x, resid_y, 110, ...
+        'MarkerFaceColor', [0.85, 0.33, 0.1], ...  % orange fill
+        'MarkerEdgeColor', [0.85, 0.33, 0.1], ...  % solid orange edge
+        'MarkerFaceAlpha', 0.5, ...                 % semi-transparent fill
+        'MarkerEdgeAlpha', 1, ...                    % opaque edge
+        'LineWidth', 1.8);
+
+    % Calculate simple correlation for annotation
     r_simple = corr(resid_x, resid_y);
     R2_simple = r_simple^2;
-    t_stat = b_simple(2)/sqrt(sum(resid.^2)/((length(resid_x)-2)*Sxx));
-    p_val = 2*(1 - tcdf(abs(t_stat), length(resid_x)-2));
-    stars_str = reg_stars{g};
+    p_simple = 2*(1 - tcdf(abs(r_simple*sqrt((length(resid_x)-2)/(1-r_simple^2))), length(resid_x)-2));
+    beta_val = b_simple(2);
+    stars = reg_stars{g};
 
-    % Labels and aesthetics
-    roi_name = pretty_names(group_names{g});
-    title(sprintf('%s\n\\beta=%.3f, R^2=%.3f, p=%.3f %s', ...
-        roi_name, b_simple(2), R2_simple, p_val, stars_str), ...
-        'FontSize', 18, 'FontWeight', 'bold');
-    
-    xlabel(['Normalized BOLD fMRI signal at the ' roi_name], 'FontSize', 16);
-    ylabel('PES Total (Residualized)', 'FontSize', 16);
-    
-    set(gca, 'FontSize', 14, 'LineWidth', 2, 'Box', 'on');
+    % Titles and labels with pretty names
+    pname = pretty_names(group_names{g});
+    title(sprintf('%s\n\\beta=%.3f, R^2=%.3f, p=%.3f %s', pname, beta_val, R2_simple, p_simple, stars), ...
+        'FontSize', 16, 'FontWeight', 'bold', 'HorizontalAlignment', 'center');
+
+    xlabel(sprintf('%s (Residualized)', pname), 'FontSize', 14);
+    ylabel('PES Total (Residualized)', 'FontSize', 14);
+
+    box on;
+    set(gca, 'FontSize', 13, 'LineWidth', 1.5);
+    grid off;
+    hold off;
+end
+
+% Remove empty subplot (6th position) if less than 6 groups
+if num_groups < 6
+    ax_empty = axes('Position', [left_start + 2*(panel_w + h_spacing), bottom_start - panel_h - v_spacing, panel_w, panel_h]);
+    axis off;
 end
