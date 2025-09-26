@@ -1,0 +1,49 @@
+% ------------ LOSO CROSS-VALIDATION ------------
+n_clean = size(X_norm, 1);  % Number of clean (non-outlier) subjects
+y_pred_LOSO = nan(n_clean, 1);
+
+for i = 1:n_clean
+    % Logical mask for train/test split
+    test_mask = false(n_clean, 1);
+    test_mask(i) = true;
+    train_mask = ~test_mask;
+
+    % Training data
+    X_train = X_norm(train_mask, :);
+    y_train = y_clean(train_mask);
+    head_train = head_norm(train_mask);
+
+    % Test data
+    X_test = X_norm(test_mask, :);
+    y_test = y_clean(test_mask);
+    head_test = head_norm(test_mask);
+
+    % Add intercept
+    X_reg_train = [ones(sum(train_mask),1), X_train, head_train];
+    X_reg_test  = [1, X_test, head_test];  % row vector
+
+    % Fit model on training data
+    b_LOSO = regress(y_train, X_reg_train);
+
+    % Predict for held-out subject
+    y_pred_LOSO(i) = X_reg_test * b_LOSO;
+end
+
+% ------------ EVALUATE LOSO PERFORMANCE ------------
+r_LOSO = corr(y_clean, y_pred_LOSO);
+rmse_LOSO = sqrt(mean((y_clean - y_pred_LOSO).^2));
+
+fprintf('\n--- LOSO Cross-Validation ---\n');
+fprintf('LOSO Pearson r = %.3f\n', r_LOSO);
+fprintf('LOSO RMSE = %.3f\n', rmse_LOSO);
+
+
+figure;
+scatter(y_clean, y_pred_LOSO, 70, 'filled', 'MarkerFaceColor', [0.2 0.6 0.9]);
+hold on;
+lsline;  % least-squares line
+xlabel('Actual PES Total');
+ylabel('Predicted PES (LOSO)');
+title(sprintf('LOSO Prediction (r = %.3f, RMSE = %.2f)', r_LOSO, rmse_LOSO));
+grid on;
+box on;
