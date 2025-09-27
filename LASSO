@@ -47,14 +47,6 @@ R2_lasso = 1 - SS_res / SS_tot;
 fprintf('LASSO R² on full data: %.4f\n', R2_lasso);
 
 
-est lambda selected: 0.23051
-Selected predictors:
-ROI: sensory, Coef = 0.8417
-ROI: cingulate, Coef = -0.7458
-ROI: insula, Coef = 0.0704
->> % Predicted values on full dataset
-y_pred_lasso = X * coef + intercept;
-
 % Compute R²
 SS_res = sum((y - y_pred_lasso).^2);
 SS_tot = sum((y - mean(y)).^2);
@@ -63,7 +55,7 @@ R2_lasso = 1 - SS_res / SS_tot;
 fprintf('LASSO R² on full data: %.4f\n', R2_lasso);
 LASSO R² on full data: 0.3098
 
-Now plot
+%% Now plot %%%%
 
 figure('Color', 'w');
 scatter(y, y_pred_lasso, 70, 'filled', 'MarkerFaceColor', [0 0.4470 0.7410]);
