@@ -1,71 +1,74 @@
-% Predictors (without intercept term)
-X = [X_norm, head_norm]; % [n_samples x (num_ROIs + 1)]
+% Assuming these variables exist:
+% X = [X_norm, head_norm];  % predictors
+% y = y_clean;              % response
+% group_names = {...};      % cell array of ROI names, length = num_groups
 
-% Response
-y = y_clean;
+k = 10;
+cv = cvpartition(y, 'KFold', k);
 
+% To store results
+coef_all = zeros(size(X,2), k);
+intercept_all = zeros(k,1);
+y_pred_all = nan(size(y));
 
-% Perform LASSO with 10-fold cross-validation to choose lambda
-[B, FitInfo] = lasso(X, y, 'CV', 10);
+for fold = 1:k
+    trainIdx = training(cv, fold);
+    testIdx = test(cv, fold);
 
-% Plot MSE vs Lambda
-lassoPlot(B, FitInfo, 'PlotType', 'CV');
-xlabel('Log(\lambda)');
-ylabel('Mean Squared Error (MSE)');
-title('LASSO Cross-Validation');
-grid on;
+    fprintf('Fold %d:\n', fold);
+    fprintf(' Training samples: %d\n', sum(trainIdx));
+    fprintf(' Test samples: %d\n', sum(testIdx));
 
-idxLambdaMinMSE = FitInfo.IndexMinMSE; % index of lambda with min MSE
-bestLambda = FitInfo.Lambda(idxLambdaMinMSE);
+    % Prepare training and test sets
+    X_train = X(trainIdx, :);
+    y_train = y(trainIdx);
+    X_test = X(testIdx, :);
+    y_test = y(testIdx);
 
-coef = B(:, idxLambdaMinMSE); % coefficients at best lambda
-intercept = FitInfo.Intercept(idxLambdaMinMSE);
+    % Perform LASSO with internal CV on training set only (optional: you can fix lambda or run another CV here)
+    [B, FitInfo] = lasso(X_train, y_train, 'CV', 5);  % inner CV to select lambda
+    idxLambdaMinMSE = FitInfo.IndexMinMSE;
+    coef = B(:, idxLambdaMinMSE);
+    intercept = FitInfo.Intercept(idxLambdaMinMSE);
 
-fprintf('Best lambda selected: %.5f\n', bestLambda);
+    % Store coefficients
+    coef_all(:, fold) = coef;
+    intercept_all(fold) = intercept;
 
-% Display non-zero coefficients (selected features)
-selected = find(coef ~= 0);
+    % Predict on test fold
+    y_pred_fold = X_test * coef + intercept;
+    y_pred_all(testIdx) = y_pred_fold;
 
-fprintf('Selected predictors:\n');
-for i = 1:length(selected)
-    if selected(i) <= num_groups
-        fprintf('ROI: %s, Coef = %.4f\n', group_names{selected(i)}, coef(selected(i)));
-    else
-        fprintf('Head Motion, Coef = %.4f\n', coef(selected(i)));
+    % Show selected features for this fold
+    selected = find(coef ~= 0);
+    fprintf(' Selected predictors in fold %d:\n', fold);
+    for i = 1:length(selected)
+        if selected(i) <= num_groups
+            fprintf('  ROI: %s, Coef = %.4f\n', group_names{selected(i)}, coef(selected(i)));
+        else
+            fprintf('  Head Motion, Coef = %.4f\n', coef(selected(i)));
+        end
     end
+    fprintf('\n');
 end
 
-
-% Predicted values on full dataset
-y_pred_lasso = X * coef + intercept;
-
-% Compute R²
-SS_res = sum((y - y_pred_lasso).^2);
+% Compute overall R² on all samples based on CV predictions
+SS_res = sum((y - y_pred_all).^2);
 SS_tot = sum((y - mean(y)).^2);
-R2_lasso = 1 - SS_res / SS_tot;
+R2_cv = 1 - SS_res / SS_tot;
 
-fprintf('LASSO R² on full data: %.4f\n', R2_lasso);
+fprintf('Cross-validated LASSO R²: %.4f\n', R2_cv);
 
-
-% Compute R²
-SS_res = sum((y - y_pred_lasso).^2);
-SS_tot = sum((y - mean(y)).^2);
-R2_lasso = 1 - SS_res / SS_tot;
-
-fprintf('LASSO R² on full data: %.4f\n', R2_lasso);
-
-%% Now plot %%%%
-
-figure('Color', 'w');
-scatter(y, y_pred_lasso, 70, 'filled', 'MarkerFaceColor', [0 0.4470 0.7410]);
+% Plot observed vs predicted (CV)
+figure('Color','w');
+scatter(y, y_pred_all, 70, 'filled', 'MarkerFaceColor', [0 0.4470 0.7410]);
 xlabel('Observed PES Total');
-ylabel('Predicted PES Total (LASSO)');
-title(sprintf('LASSO Regression Fit\nR^2 = %.3f', R2_lasso));
+ylabel('Predicted PES Total (LASSO CV)');
+title(sprintf('LASSO Cross-Validated Fit\nR^2 = %.3f', R2_cv));
 grid on;
 axis equal;
-refline(1, 0); % 45-degree line showing perfect prediction
+refline(1,0);
 xlim([min(y) max(y)]);
-ylim([min(y_pred_lasso) max(y_pred_lasso)]);
+ylim([min(y_pred_all) max(y_pred_all)]);
 set(gca, 'FontSize', 14, 'LineWidth', 1.2);
 box on;
-
