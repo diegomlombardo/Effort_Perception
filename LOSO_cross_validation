@@ -1,51 +1,139 @@
-% ------------ LOSO CROSS-VALIDATION ------------
-n_clean = size(X_norm, 1);  % Number of clean (non-outlier) subjects
-y_pred_LOSO = nan(n_clean, 1);
+% ---------------------- SETUP -------------------------
+n_clean = size(X_norm, 1);       % Number of clean subjects
+n_features = size(X_norm, 2);    % Number of ROI features
+n_motion = size(head_norm, 2);   % Number of head motion features
 
+% Optional: provide labels
+% group_names = {...};          % ROI names (1:n_features)
+% head_motion_labels = {...};   % Head motion names (1:n_motion)
+
+% Storage for LOSO
+y_pred_LOSO = nan(n_clean, 1);
+B_all = nan(1 + n_features + n_motion, n_clean);  % intercept + all predictors
+
+% ----------------- LOSO CROSS-VALIDATION ------------------
 for i = 1:n_clean
-    % Logical mask for train/test split
+    % Train/test split
     test_mask = false(n_clean, 1);
     test_mask(i) = true;
     train_mask = ~test_mask;
 
-    % Training data
+    % Prepare data
     X_train = X_norm(train_mask, :);
+    X_test  = X_norm(test_mask, :);
+    head_train = head_norm(train_mask, :);
+    head_test  = head_norm(test_mask, :);
     y_train = y_clean(train_mask);
-    head_train = head_norm(train_mask);
+    y_test  = y_clean(test_mask);
 
-    % Test data
-    X_test = X_norm(test_mask, :);
-    y_test = y_clean(test_mask);
-    head_test = head_norm(test_mask);
+    % Build regression matrices with intercept
+    X_reg_train = [ones(sum(train_mask), 1), X_train, head_train];
+    X_reg_test  = [1, X_test, head_test];
 
-    % Add intercept
-    X_reg_train = [ones(sum(train_mask),1), X_train, head_train];
-    X_reg_test  = [1, X_test, head_test];  % row vector
-
-    % Fit model on training data
+    % Fit OLS model
     b_LOSO = regress(y_train, X_reg_train);
 
-    % Predict for held-out subject
+    % Predict and store
     y_pred_LOSO(i) = X_reg_test * b_LOSO;
+    B_all(:, i) = b_LOSO;
+
+    % ---- Per-subject reporting ----
+    fprintf('--- Subject %d held out ---\n', i);
+    fprintf(' Predicted: %.3f | Actual: %.3f\n', y_pred_LOSO(i), y_test);
+    fprintf(' Coefficients:\n');
+
+    fprintf('  Intercept: %+8.4f\n', b_LOSO(1));
+
+    % ROI predictors
+    for j = 1:n_features
+        idx = j + 1;
+        if exist('group_names', 'var')
+            fprintf('  ROI: %-25s | Beta = %+8.4f\n', group_names{j}, b_LOSO(idx));
+        else
+            fprintf('  ROI_%02d                     | Beta = %+8.4f\n', j, b_LOSO(idx));
+        end
+    end
+
+    % Head motion predictors
+    for j = 1:n_motion
+        idx = n_features + 1 + j;
+        if exist('head_motion_labels', 'var')
+            fprintf('  Head Motion: %-15s | Beta = %+8.4f\n', head_motion_labels{j}, b_LOSO(idx));
+        else
+            fprintf('  Head Motion_%02d            | Beta = %+8.4f\n', j, b_LOSO(idx));
+        end
+    end
+
+    fprintf('\n');
 end
 
-% ------------ EVALUATE LOSO PERFORMANCE ------------
+% ----------------- LOSO PERFORMANCE -------------------
 r_LOSO = corr(y_clean, y_pred_LOSO);
 rmse_LOSO = sqrt(mean((y_clean - y_pred_LOSO).^2));
 
-fprintf('\n--- LOSO Cross-Validation ---\n');
-fprintf('LOSO Pearson r = %.3f\n', r_LOSO);
-fprintf('LOSO RMSE = %.3f\n', rmse_LOSO);
+fprintf('=== LOSO Cross-Validation Summary ===\n');
+fprintf(' Pearson r       = %.3f\n', r_LOSO);
+fprintf(' RMSE            = %.3f\n', rmse_LOSO);
 
+% ----------------- COEFFICIENT SUMMARY ----------------
+fprintf('\n=== Mean ± Std of Coefficients Across Subjects ===\n');
 
-figure;
+% Label generation
+coef_labels = ["Intercept", ...
+    strcat("ROI_", string(1:n_features)), ...
+    strcat("Motion_", string(1:n_motion))];
+
+if exist('group_names', 'var')
+    coef_labels(2:1+n_features) = group_names;
+end
+
+if exist('head_motion_labels', 'var')
+    coef_labels(end-n_motion+1:end) = head_motion_labels;
+end
+
+for j = 1:size(B_all, 1)
+    mean_beta = mean(B_all(j, :), 'omitnan');
+    std_beta = std(B_all(j, :), 'omitnan');
+    fprintf(' %-25s | Beta = %+7.4f ± %.4f\n', coef_labels{j}, mean_beta, std_beta);
+end
+
+% ----------------- LOSO SCATTER PLOT -----------------
+figure('Color','w');
 scatter(y_clean, y_pred_LOSO, 70, 'filled', 'MarkerFaceColor', [0.2 0.6 0.9]);
 hold on;
-lsline;  % least-squares line
+lsline;
 xlabel('Actual PES Total');
-ylabel('Predicted PES (LOSO)');
-title(sprintf('LOSO Prediction (r = %.3f, RMSE = %.2f)', r_LOSO, rmse_LOSO));
-grid on;
-box on;
+ylabel('Predicted PES Total (LOSO)');
+title(sprintf('LOSO Prediction\nr = %.3f, RMSE = %.2f', r_LOSO, rmse_LOSO));
+grid on; box on;
+set(gca, 'FontSize', 13);
+
+% ----------------- FULL COHORT MODEL -----------------
+X_full = [ones(n_clean,1), X_norm, head_norm];
+b_full = regress(y_clean, X_full);
+
+fprintf('\n=== Final Full Cohort Model Coefficients ===\n');
+
+for j = 1:length(b_full)
+    if j == 1
+        label = 'Intercept';
+    elseif j <= 1 + n_features
+        idx = j - 1;
+        if exist('group_names', 'var')
+            label = group_names{idx};
+        else
+            label = sprintf('ROI_%02d', idx);
+        end
+    else
+        idx = j - 1 - n_features;
+        if exist('head_motion_labels', 'var')
+            label = head_motion_labels{idx};
+        else
+            label = sprintf('Motion_%02d', idx);
+        end
+    end
+    fprintf(' %-25s | Beta = %+7.4f\n', label, b_full(j));
+end
+
 
 
