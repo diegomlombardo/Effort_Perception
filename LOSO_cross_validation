@@ -98,41 +98,57 @@ for j = 1:size(B_all, 1)
 end
 
 % ----------------- LOSO SCATTER PLOT -----------------
-figure('Color','w');
-scatter(y_clean, y_pred_LOSO, 70, 'filled', 'MarkerFaceColor', [0.2 0.6 0.9]);
+figure('Color','w', 'Units','inches', 'Position',[1,1,5,5]);
+scatter(y_clean, y_pred_LOSO, 70, ...
+    'MarkerFaceColor', [0.2 0.6 0.9], ...
+    'MarkerEdgeColor', [0.1 0.1 0.1], ...
+    'LineWidth', 1.5);
 hold on;
-lsline;
-xlabel('Actual PES Total');
-ylabel('Predicted PES Total (LOSO)');
-title(sprintf('LOSO Prediction\nr = %.3f, RMSE = %.2f', r_LOSO, rmse_LOSO));
-grid on; box on;
-set(gca, 'FontSize', 13);
+
+% Identity line
+lims = [min([y_clean; y_pred_LOSO]), max([y_clean; y_pred_LOSO])];
+lims = lims + 0.05 * [-1 1] * range(lims);
+plot(lims, lims, '-', 'Color', [0.3 0.3 0.3], 'LineWidth', 2);
+
+% Fit line
+b_fit = polyfit(y_clean, y_pred_LOSO, 1);
+plot(lims, polyval(b_fit, lims), '--', 'Color', [0.85 0.33 0.10], 'LineWidth', 2);
+
+xlabel('Actual PES Total', 'FontSize', 14, 'FontWeight', 'bold');
+ylabel('Predicted PES Total (LOSO)', 'FontSize', 14, 'FontWeight', 'bold');
+
+R2_LOSO = r_LOSO^2;
+annotation_text = sprintf('r = %.2f\nR^2 = %.2f\nRMSE = %.2f', r_LOSO, R2_LOSO, rmse_LOSO);
+text(0.97, 0.05, annotation_text, 'Units','normalized', ...
+    'HorizontalAlignment','right', 'VerticalAlignment','bottom', ...
+    'FontSize', 12, 'FontName', 'Helvetica');
+
+axis square;
+xlim(lims); ylim(lims);
+set(gca, 'FontSize', 12, 'LineWidth', 1.2, 'TickDir', 'out');
+box off;
+
+legend({'Observed vs Predicted', 'Identity line', 'Fit line'}, ...
+    'Location', 'northwest', 'FontSize', 10, 'Box', 'off');
 
 % ----------------- FULL COHORT MODEL -----------------
 X_full = [ones(n_clean,1), X_norm, head_norm];
-b_full = regress(y_clean, X_full);
+[b_full, ~, residuals] = regress(y_clean, X_full);
 
-fprintf('\n=== Final Full Cohort Model Coefficients ===\n');
+% Compute full model p-values
+n_params = size(X_full, 2);
+df = n_clean - n_params;
+MSE = sum(residuals.^2) / df;
 
+XTX_inv = inv(X_full' * X_full);
+se_b = sqrt(diag(MSE * XTX_inv));
+t_stats = b_full ./ se_b;
+p_vals = 2 * (1 - tcdf(abs(t_stats), df));
+
+fprintf('\n=== Final Full Cohort Model Coefficients (with p-values) ===\n');
 for j = 1:length(b_full)
-    if j == 1
-        label = 'Intercept';
-    elseif j <= 1 + n_features
-        idx = j - 1;
-        if exist('group_names', 'var')
-            label = group_names{idx};
-        else
-            label = sprintf('ROI_%02d', idx);
-        end
-    else
-        idx = j - 1 - n_features;
-        if exist('head_motion_labels', 'var')
-            label = head_motion_labels{idx};
-        else
-            label = sprintf('Motion_%02d', idx);
-        end
-    end
-    fprintf(' %-25s | Beta = %+7.4f\n', label, b_full(j));
+    label = coef_labels{j};
+    fprintf(' %-25s | Beta = %+7.4f | p = %.4g\n', label, b_full(j), p_vals(j));
 end
 
 
