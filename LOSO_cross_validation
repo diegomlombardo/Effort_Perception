@@ -152,4 +152,86 @@ for j = 1:length(b_full)
 end
 
 
+Simple PLOT
+
+% ----------------- PUBLICATION-QUALITY ROI BETA PLOT ------------------
+
+% Internal ROI names (used for indexing)
+rois_internal = {
+    'premotor'
+    'supplementary'
+    'cingulate'
+    'sensory'
+    'insula'
+};
+
+% Pretty display names for legend
+rois_display = {
+    'Premotor Cortex (Precentral Gyrus)'
+    'Supplementary Motor Area'
+    'Cingulate Cortex Meta-ROI'
+    'Primary Sensory Cortex (S1)'
+    'Insular Cortex'
+};
+
+% Find indices
+[found_flags, roi_indices] = ismember(rois_internal, group_names);
+if any(~found_flags)
+    fprintf('\n--- ROI Name Matching Error ---\n');
+    disp(rois_internal(~found_flags)')
+    error('Check spelling/formatting of ROI names.');
+end
+
+% Extract beta values
+B_selected = B_all(roi_indices + 1, :);  % +1 skips intercept
+
+% Create figure
+figure('Color', 'w', 'Units', 'inches', 'Position', [1, 1, 9, 6]);
+hold on;
+
+% Color scheme
+colors = lines(length(roi_indices));
+
+% Plot each ROI with thick lines and bigger markers
+for i = 1:length(roi_indices)
+    plot(1:n_clean, B_selected(i, :), '-o', ...
+        'LineWidth', 3, ...          % << Thicker lines
+        'MarkerSize', 8, ...         % << Larger markers
+        'Color', colors(i,:), ...
+        'DisplayName', rois_display{i});
+end
+
+% Axis labels
+xlabel('LOSO Fold (Held-Out Subject Index)', ...
+    'FontSize', 16, 'FontWeight', 'bold');
+
+ylabel('Beta Coefficient', ...
+    'FontSize', 16, 'FontWeight', 'bold');
+
+% Bigger title/caption
+title('Beta Coefficients Across LOSO Folds for Selected ROIs', ...
+    'FontSize', 18, 'FontWeight', 'bold');  % << Larger caption
+
+% Legend (optional: set Orientation to 'horizontal' for top legend)
+legend('Location', 'northoutside', ...
+    'Orientation', 'horizontal', ...
+    'FontSize', 13, 'Box', 'off');
+
+% Clean axes
+set(gca, ...
+    'FontSize', 14, ...
+    'FontName', 'Helvetica', ...
+    'LineWidth', 2, ...              % << Wider axis lines
+    'TickDir', 'out', ...
+    'Box', 'off');
+
+% No grid
+grid off;
+
+% Tight layout (optional, if tightfig installed)
+% tightfig();
+
+% Optional: Save high-res
+% print(gcf, 'LOSO_ROI_Betas_Publication', '-dpdf', '-painters');
+% print(gcf, 'LOSO_ROI_Betas_Publication', '-dpng', '-r600');
 
