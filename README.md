@@ -1,4 +1,8 @@
-# Effort_Perception
+# Neural Signatures of Physical Effort Perception
+
+This repository contains analysis code for the study:  
+**"Trait-like neural signatures of physical effort perception dissociated from motor execution in humans"**  
+Led by **Diego Lombardo**, supervised by **Florian Monjo**.
 
 Raw data files (.mat) are available on Zenodo: 10.5281/zenodo.17238287
 
