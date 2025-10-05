@@ -5,12 +5,13 @@ total_subjects = 47;
 valid_subjects = setdiff(1:total_subjects, missing_subjects);
 num_subjects = length(valid_subjects);
 
-% Define ROI groups including insula (assuming insula is ROI #34)
+% Define ROI groups including dlPFC as average of ROIs 3 and 4
 roi_groups.premotor      = [7];
 roi_groups.supplementary = [26];
 roi_groups.sensory       = [17];
 roi_groups.cingulate     = [29, 30];
 roi_groups.insula        = [34];
+roi_groups.dlPFC         = [3, 4];  % <-- Added dlPFC even do not anatomically accurate based in Harvard-Oxford Atlas
 
 group_names = fieldnames(roi_groups);
 num_groups = length(group_names);
@@ -215,8 +216,8 @@ fprintf('Head motion partial rho=%.3f, Holm-Bonferroni p=%.4f %s\n', ...
 
 % Define pretty names for plotting only (capitalized and expanded)
 pretty_names = containers.Map( ...
-    {'premotor', 'supplementary', 'sensory', 'cingulate', 'insula'}, ...
-    {'Premotor', 'Supplementary Motor Area', 'Primary Sensory Cortex', 'Cingulate', 'Insula'});
+    {'premotor', 'supplementary', 'sensory', 'cingulate', 'insula', 'dlPFC'}, ...
+    {'Premotor', 'Supplementary Motor Area', 'Primary Sensory Cortex', 'Cingulate', 'Insula', 'dlPFC'});
 
 figure('Color','w','Position',[100 100 1600 900]);
 
@@ -225,12 +226,12 @@ for g = 1:num_groups
 
     x = X_norm(:, g);
     y = y_clean;
-    
+
     x = x(:);
     y = y(:);
 
     ctrl_vars = setdiff(1:num_groups, g);
-    X_ctrl = [X_norm(:, ctrl_vars), head_norm];  % Fix: head_norm column vector
+    X_ctrl = [X_norm(:, ctrl_vars), head_norm];
 
     X_ctrl_aug = [ones(size(X_ctrl,1),1), X_ctrl];
 
@@ -262,14 +263,12 @@ for g = 1:num_groups
     plot(x_fit, y_fit, 'b-', 'LineWidth', 2.5);
     scatter(resid_x, resid_y, 80, 'filled', 'MarkerFaceColor', [0.2 0.2 0.8], 'MarkerFaceAlpha', 0.7);
 
-    % Calculate simple correlation stats
     r_simple = corr(resid_x, resid_y);
     R2_simple = r_simple^2;
     p_simple = 2*(1 - tcdf(abs(r_simple*sqrt((length(resid_x)-2)/(1-r_simple^2))), length(resid_x)-2));
     beta_val = b_simple(2);
     stars = reg_stars{g};
 
-    % Use pretty name for title and x-label
     pname = pretty_names(group_names{g});
     title(sprintf('%s\n\\beta=%.3f, R^2=%.3f, p=%.3f %s', pname, beta_val, R2_simple, p_simple, stars), ...
         'FontSize', 16, 'FontWeight', 'bold', 'HorizontalAlignment', 'center');
@@ -281,7 +280,6 @@ for g = 1:num_groups
     hold off;
 end
 
-% Remove the empty subplot if any (since 5 ROIs in a 2x3 grid)
 if num_groups < 6
     subplot(2,3,6);
     axis off;
@@ -293,7 +291,6 @@ figure('Color','w','Position',[150 150 1100 450]);
 bar(partial_rhos, 'FaceColor', [0.3 0.7 0.9], 'EdgeColor', 'k', 'LineWidth', 1.8);
 hold on;
 
-% Prepare labels for partial correlations
 partial_labels = cell(num_vars,1);
 for i = 1:num_groups
     partial_labels{i} = pretty_names(group_names{i});
@@ -313,7 +310,8 @@ for v = 1:num_vars
 end
 hold off;
 
-%% Then plot %%
+
+%% Then plot just figure out how to plot dlPFC as well%%
 
 % ----------- PRETTY NAMES FOR PLOTS -----------
 
