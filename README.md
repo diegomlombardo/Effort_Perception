@@ -2,7 +2,7 @@
 
 This repository contains analysis code for the study:  
 **"Trait-like neural signatures of physical effort perception dissociated from motor execution in humans"**  
-Led by **Diego Lombardo**, supervised by **Florian Monjo**.
+Led by **Diego Lombardo**
 
 Raw data files (.mat) are available on Zenodo: https://doi.org/10.5281/zenodo.17238287 and are needed to use this scripts along with the PES and head movement data inside of the .mat file in this attached this GitHub "behavioral_fMRIFD_data.mat"
 
