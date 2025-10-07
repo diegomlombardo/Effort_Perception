@@ -1,0 +1,237 @@
+% ----------- SETUP -----------
+
+missing_subjects = [1, 9, 35];
+total_subjects = 47;
+valid_subjects = setdiff(1:total_subjects, missing_subjects);
+num_subjects = length(valid_subjects);
+
+% Define ROI groups including insula (assuming insula is ROI #34)
+roi_groups.premotor      = [7];
+roi_groups.supplementary = [26];
+roi_groups.sensory       = [17];
+roi_groups.cingulate     = [29, 30];
+roi_groups.insula        = [34];
+
+group_names = fieldnames(roi_groups);
+num_groups = length(group_names);
+
+% Initialize BOLD data matrices for Task 1 and Task 2
+bold_task1 = nan(num_subjects, num_groups);
+bold_task2 = nan(num_subjects, num_groups);
+
+% ----------- LOAD DATA -----------
+
+subject_idx = 0;
+for subj = 1:total_subjects
+    if ismember(subj, missing_subjects)
+        continue;
+    end
+    subject_idx = subject_idx + 1;
+    subj_str = sprintf('%02d', subj);
+
+    % Load Task 1 data
+    file_task1 = ['ROIs_sub_' subj_str '_task1.mat'];
+    data1 = load(file_task1); % loads variable 'bold_data' [time x 48]
+    bold1 = data1.bold_data;
+
+    % Load Task 2 data
+    file_task2 = ['ROIs_sub_' subj_str '_task2.mat'];
+    data2 = load(file_task2); % loads variable 'bold_data' [time x 48]
+    bold2 = data2.bold_data;
+
+    for g = 1:num_groups
+        roi_indices = roi_groups.(group_names{g});
+        bold_task1(subject_idx, g) = mean(mean(bold1(:, roi_indices), 2), 'omitnan');
+        bold_task2(subject_idx, g) = mean(mean(bold2(:, roi_indices), 2), 'omitnan');
+    end
+end
+
+% ----------- LOAD BEHAVIOR AND HEAD MOTION -----------
+
+% pes_totals must be loaded externally before running
+if ~exist('pes_totals', 'var') || length(pes_totals) ~= num_subjects
+    error('pes_totals must be loaded and match valid subjects count');
+end
+if isrow(pes_totals)
+    pes_totals = pes_totals';
+end
+
+% head must be loaded externally, first column subj index, second column motion
+if ~exist('head', 'var') || size(head,1) ~= num_subjects
+    error('head must exist and have %d rows', num_subjects);
+end
+head_motion = head(:, 2);
+
+% ----------- REMOVE OUTLIERS -----------
+
+threshold = 3;
+outlier_mask = any(abs(bold_task1) > threshold, 2) | any(abs(bold_task2) > threshold, 2);
+
+X_task1_clean = bold_task1(~outlier_mask, :);
+X_task2_clean = bold_task2(~outlier_mask, :);
+y_clean = pes_totals(~outlier_mask);
+head_clean = head_motion(~outlier_mask);
+
+fprintf('Removed %d outliers\n', sum(outlier_mask));
+
+% ----------- NORMALIZE PREDICTORS -----------
+
+X_task1_norm = (X_task1_clean - mean(X_task1_clean)) ./ std(X_task1_clean);
+X_task2_norm = (X_task2_clean - mean(X_task2_clean)) ./ std(X_task2_clean);
+head_norm = (head_clean - mean(head_clean)) ./ std(head_clean);
+head_norm = head_norm(:); % Ensure column vector for concatenations
+
+% ----------- COMBINE TASK1 and TASK2 PREDICTORS -----------
+
+X_combined = [X_task1_norm, X_task2_norm];
+
+% ----------- LINEAR REGRESSION -----------
+
+X_reg = [ones(size(X_combined,1), 1), X_combined, head_norm];
+[b,~,~,~,stats] = regress(y_clean, X_reg);
+
+n = size(X_reg,1);
+p = size(X_reg,2);
+df = n - p;
+
+y_pred = X_reg * b;
+residuals = y_clean - y_pred;
+sigma2 = sum(residuals.^2) / df;
+XTX_inv = inv(X_reg' * X_reg);
+se = sqrt(diag(sigma2 * XTX_inv));
+t_stats = b ./ se;
+p_uncorrected = 2 * (1 - tcdf(abs(t_stats), df));
+
+% ----------- PERMUTATION TEST -----------
+
+num_permutations = 10000;
+num_predictors = num_groups * 2; % task1 + task2
+perm_betas = zeros(num_permutations, num_predictors);
+
+for i = 1:num_permutations
+    y_perm = y_clean(randperm(length(y_clean)));
+    b_perm = regress(y_perm, X_reg);
+    perm_betas(i, :) = b_perm(2:(num_predictors+1))';
+end
+
+observed_betas = b(2:(num_predictors+1));
+p_perm_uncorrected = zeros(1, num_predictors);
+
+for g = 1:num_predictors
+    p_perm_uncorrected(g) = mean(abs(perm_betas(:, g)) >= abs(observed_betas(g)));
+end
+
+% ----------- HOLM-BONFERRONI CORRECTION -----------
+
+[p_sorted, sort_idx] = sort(p_perm_uncorrected);
+holm_p = zeros(size(p_perm_uncorrected));
+m = num_predictors;
+
+for k = 1:m
+    holm_p(k) = min(1, (m - k + 1) * p_sorted(k));
+end
+
+for k = 2:m
+    if holm_p(k) < holm_p(k-1)
+        holm_p(k) = holm_p(k-1);
+    end
+end
+
+p_perm_holm = zeros(size(p_perm_uncorrected));
+p_perm_holm(sort_idx) = holm_p;
+
+% ----------- PREPARE NAMES FOR PRINTING -----------
+
+pretty_names = containers.Map();
+
+for g = 1:num_groups
+    name = group_names{g};
+    capitalized_name = [upper(name(1)), name(2:end)];
+    pretty_names([name '_task1']) = [capitalized_name ' Task1'];
+    pretty_names([name '_task2']) = [capitalized_name ' Task2'];
+end
+
+% ----------- PRINT RESULTS -----------
+
+fprintf('--- Combined Task1 & Task2 Regression Results ---\n');
+fprintf('Intercept: %.4f\n', b(1));
+
+for g = 1:num_predictors
+    if g <= num_groups
+        key = [group_names{g} '_task1'];
+    else
+        key = [group_names{g - num_groups} '_task2'];
+    end
+    fprintf('%s beta: %.4f, Holm-Bonferroni corrected p: %.4f\n', ...
+        pretty_names(key), b(g+1), p_perm_holm(g));
+end
+
+fprintf('Head motion beta: %.4f, uncorrected p: %.4f\n', b(end), p_uncorrected(end));
+fprintf('R²=%.4f, F-stat=%.4f, overall p=%.4f\n', stats(1), stats(2), stats(3));
+
+% ----------- PLOT REGRESSION WITH SHADED ERROR -----------
+
+figure('Color','w','Position',[100 100 1600 900]);
+
+num_plots = num_predictors;
+num_cols = 3;
+num_rows = ceil(num_plots / num_cols);
+
+for g = 1:num_plots
+    subplot(num_rows, num_cols, g);
+
+    x = X_combined(:, g);
+    y = y_clean;
+    x = x(:);
+    y = y(:);
+
+    % Residualize x and y against other predictors and head motion
+    ctrl_vars = setdiff(1:num_predictors, g);
+    X_ctrl = [X_combined(:, ctrl_vars), head_norm];
+    X_ctrl_aug = [ones(size(X_ctrl,1),1), X_ctrl];
+
+    beta_x = X_ctrl_aug \ x;
+    beta_y = X_ctrl_aug \ y;
+
+    resid_x = x - X_ctrl_aug * beta_x;
+    resid_y = y - X_ctrl_aug * beta_y;
+
+    % Simple regression on residuals
+    b_simple = regress(resid_y, [ones(length(resid_x),1), resid_x]);
+
+    x_fit = linspace(min(resid_x), max(resid_x), 100)';
+    y_fit = b_simple(1) + b_simple(2)*x_fit;
+
+    % Calculate standard error for shaded error bars
+    y_pred_simple = b_simple(1) + b_simple(2)*resid_x;
+    resid_simple = resid_y - y_pred_simple;
+    s_err = sqrt(sum(resid_simple.^2) / (length(resid_x)-2));
+
+    x_mean = mean(resid_x);
+    Sxx = sum((resid_x - x_mean).^2);
+    t_val = tinv(0.975, length(resid_x)-2);
+
+    se_fit = s_err * sqrt(1/length(resid_x) + (x_fit - x_mean).^2 / Sxx);
+    ci_upper = y_fit + t_val*se_fit;
+    ci_lower = y_fit - t_val*se_fit;
+
+    % --- Plot shaded confidence interval ---
+    fill([x_fit; flipud(x_fit)], [ci_upper; flipud(ci_lower)], [0.85 0.9 1], 'EdgeColor', 'none');
+    hold on;
+
+    % --- Plot regression line ---
+    plot(x_fit, y_fit, 'b-', 'LineWidth', 2.5);
+
+    % --- Scatter points ---
+    scatter(resid_x, resid_y, 80, 'filled', 'MarkerFaceColor', [0.2 0.2 0.8], 'MarkerFaceAlpha', 0.7);
+
+    % Simple correlation stats for annotation
+    r_simple = corr(resid_x, resid_y);
+    R2_simple = r_simple^2;
+    p_simple = 2*(1 - tcdf(abs(r_simple*sqrt((length(resid_x)-2)/(1-r_simple^2))), length(resid_x)-2));
+
+    title(sprintf('%s, R²=%.3f, p=%.3g', pretty_names(key), R2_simple, p_simple), 'FontSize', 14);
+    xlabel('Residualized ROI BOLD (z-score)', 'FontSize', 12);
+    ylabel('Residualized Behavior (z-score)', 'FontSize', 12);
+    grid on;
+end
