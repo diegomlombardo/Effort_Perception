@@ -235,3 +235,39 @@ for g = 1:num_plots
     ylabel('Residualized Behavior (z-score)', 'FontSize', 12);
     grid on;
 end
+
+%%% THIS GUY is doing something wrong in thre loop bellow the code to print a Table %%% 
+
+
+% ----------- STRUCTURE DES RÉSULTATS -----------
+
+results = struct();
+results.ROI = cell(num_predictors,1);
+results.Task = cell(num_predictors,1);
+results.Beta = observed_betas(:);
+results.P_uncorrected = p_perm_uncorrected(:);
+results.P_Holm = p_perm_holm(:);
+results.Significant = p_perm_holm(:) < 0.05;
+
+for g = 1:num_predictors
+    if g <= num_groups
+        roi_name = group_names{g};
+        task = 'Task1';
+    else
+        roi_name = group_names{g - num_groups};
+        task = 'Task2';
+    end
+    results.ROI{g} = roi_name;
+    results.Task{g} = task;
+end
+
+% Convert to table for readability
+results_table = struct2table(results);
+
+% Afficher le tableau
+disp(results_table);
+
+% Sauvegarde optionnelle
+%% writetable(results_table, 'regression_results_ROIs.csv'); %%
+%% save('regression_results_ROIs.mat', 'results_table'); %%
+
