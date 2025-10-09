@@ -1,0 +1,738 @@
+%% ----------- SETUP -----------
+
+missing_subjects = [1, 9, 35];
+total_subjects = 47;
+valid_subjects = setdiff(1:total_subjects, missing_subjects);
+num_subjects = length(valid_subjects);
+
+% Define ROI groups including insula
+roi_groups.premotor      = [7];
+roi_groups.supplementary = [26];
+roi_groups.sensory       = [17];
+roi_groups.cingulate     = [29, 30];
+roi_groups.insula        = [2];
+
+group_names = fieldnames(roi_groups);
+num_groups = length(group_names);
+
+% ----------- SETUP -----------
+
+
+
+%% ----------- INITIALIZE MATRICES FOR TASK 1 -----------
+
+X_ctrl_M_task1 = nan(num_subjects, num_groups); % first 92 points
+X_ctrl_I_task1 = nan(num_subjects, num_groups); % last 92 points
+
+%% ----------- LOAD DATA AND COMPUTE AVERAGES FOR TASK 1 -----------
+
+subject_idx = 0;
+for subj = 1:total_subjects
+    if ismember(subj, missing_subjects)
+        continue;
+    end
+    subject_idx = subject_idx + 1;
+    subj_str = sprintf('%02d', subj);
+    file_name = ['ROIs_sub_' subj_str '_task1.mat'];  % <-- task1 file
+    data = load(file_name);  % loads 'bold_data' [time x 48]
+    bold_data = data.bold_data;
+
+    n_timepoints = size(bold_data, 1);
+    if n_timepoints < 92
+        error('Subject %d does not have enough time points (need at least 92)', subj);
+    end
+
+    % First 92 time points for M
+    bold_M = bold_data(1:92, :);
+
+    % Last 92 time points for I
+    bold_I = bold_data(end-91:end, :);
+
+    % Calculate mean BOLD per ROI group for M and I
+    for g = 1:num_groups
+        roi_idx = roi_groups.(group_names{g});
+        X_ctrl_M_task1(subject_idx, g) = mean(bold_M(:, roi_idx), 'all', 'omitnan');
+        X_ctrl_I_task1(subject_idx, g) = mean(bold_I(:, roi_idx), 'all', 'omitnan');
+    end
+end
+
+%% ----------- REMOVE OUTLIERS FOR TASK 1 -----------
+
+% Threshold for outlier detection (3 standard deviations)
+threshold = 3;
+
+% Combine M and I for outlier detection across both matrices for Task 1
+combined_data_task1 = [X_ctrl_M_task1, X_ctrl_I_task1];  % 43 x 10 (5 ROIs x 2)
+
+% Compute z-score per column
+z_scores_task1 = (combined_data_task1 - mean(combined_data_task1, 1)) ./ std(combined_data_task1, 0, 1);
+
+% Find any subject with outlier values in any column
+outlier_mask_task1 = any(abs(z_scores_task1) > threshold, 2);
+
+% Remove outliers for Task 1
+X_ctrl_M_task1_clean = X_ctrl_M_task1(~outlier_mask_task1, :);
+X_ctrl_I_task1_clean = X_ctrl_I_task1(~outlier_mask_task1, :);
+
+fprintf('Task1: Removed %d outliers. Clean data size: %d subjects\n', sum(outlier_mask_task1), size(X_ctrl_M_task1_clean,1));
+
+%% ----------- INITIALIZE MATRICES FOR TASK 2 -----------
+
+X_ctrl_M_task2 = nan(num_subjects, num_groups); % first 92 points
+X_ctrl_I_task2 = nan(num_subjects, num_groups); % last 92 points
+
+%% ----------- LOAD DATA AND COMPUTE AVERAGES FOR TASK 2 -----------
+
+subject_idx = 0;
+for subj = 1:total_subjects
+    if ismember(subj, missing_subjects)
+        continue;
+    end
+    subject_idx = subject_idx + 1;
+    subj_str = sprintf('%02d', subj);
+    file_name = ['ROIs_sub_' subj_str '_task2.mat'];  % <-- task2 file
+    data = load(file_name);  % loads 'bold_data' [time x 48]
+    bold_data = data.bold_data;
+
+    n_timepoints = size(bold_data, 1);
+    if n_timepoints < 92
+        error('Subject %d does not have enough time points (need at least 92)', subj);
+    end
+
+    % First 92 time points for M
+    bold_M = bold_data(1:92, :);
+
+    % Last 92 time points for I
+    bold_I = bold_data(end-91:end, :);
+
+    % Calculate mean BOLD per ROI group for M and I
+    for g = 1:num_groups
+        roi_idx = roi_groups.(group_names{g});
+        X_ctrl_M_task2(subject_idx, g) = mean(bold_M(:, roi_idx), 'all', 'omitnan');
+        X_ctrl_I_task2(subject_idx, g) = mean(bold_I(:, roi_idx), 'all', 'omitnan');
+    end
+end
+
+%% ----------- REMOVE OUTLIERS FOR TASK 2 -----------
+
+% Combine M and I for outlier detection across both matrices for Task 2
+combined_data_task2 = [X_ctrl_M_task2, X_ctrl_I_task2];  % 43 x 10 (5 ROIs x 2)
+
+% Compute z-score per column
+z_scores_task2 = (combined_data_task2 - mean(combined_data_task2, 1)) ./ std(combined_data_task2, 0, 1);
+
+% Find any subject with outlier values in any column for Task 2
+outlier_mask_task2 = any(abs(z_scores_task2) > threshold, 2);
+
+% Remove outliers for Task 2
+X_ctrl_M_task2_clean = X_ctrl_M_task2(~outlier_mask_task2, :);
+X_ctrl_I_task2_clean = X_ctrl_I_task2(~outlier_mask_task2, :);
+
+fprintf('Task2: Removed %d outliers. Clean data size: %d subjects\n', sum(outlier_mask_task2), size(X_ctrl_M_task2_clean,1));
+
+
+% Assumptions:
+% - bold_ts_clean{k, g} contains the time series (T × 1) for subject k, ROI index g (after outliers removed)
+% - nKeep = number of cleaned subjects
+% - group_names is a cell array of ROI names, length = num_groups
+% - T = number of time points in each timeseries (assumed same for all)
+
+% Prepare a matrix for each ROI: subjects × time
+mat_roi = zeros(nKeep, T, num_groups);
+for g = 1:num_groups
+    for k = 1:nKeep
+        ts = bold_ts_clean{k, g};
+        if ~isempty(ts)
+            mat_roi(k, :, g) = ts(:).';
+        else
+            mat_roi(k, :, g) = nan(1, T);
+        end
+    end
+end
+
+% Plot
+figure;
+for g = 1:num_groups
+    subplot(num_groups, 1, g);
+    hold on;
+
+    % Plot individual subject traces
+    for k = 1:nKeep
+        ts = squeeze(mat_roi(k, :, g));
+        plot(1:T, ts, 'Color', [0.7 0.7 0.7]);  % light gray
+    end
+
+    % Compute the mean time series (across subjects)
+    mean_ts = squeeze(nanmean(mat_roi(:, :, g), 1));
+    plot(1:T, mean_ts, 'r', 'LineWidth', 2);
+
+    xlabel('Time (scans)');
+    ylabel(sprintf('%s ROI BOLD', group_names{g}));
+    title(sprintf('ROI: %s — Cleaned Subjects', group_names{g}));
+
+    % Compute kurtosis & skewness of the **mean time series** (or differently as desired)
+    k_val = kurtosis(mean_ts);
+    s_val = skewness(mean_ts);
+
+    % Optionally, compute across **subject means** for that ROI:
+    subj_means = squeeze(nanmean(mat_roi(:, :, g), 2));  % nKeep × 1
+    k_subj = kurtosis(subj_means);
+    s_subj = skewness(subj_means);
+
+    % Choose which stats to annotate — I'll show both mean-time and subject-mean
+    txt = sprintf('k_{meanTs}=%.2f, s_{meanTs}=%.2f\nk_{subj}=%.2f, s_{subj}=%.2f', ...
+                  k_val, s_val, k_subj, s_subj);
+
+    % Place text in a corner
+    x_pos = round(0.7 * T);
+    y_lim = ylim();
+    y_pos = y_lim(2) - 0.1 * (y_lim(2) - y_lim(1));  % 10% down from top
+    text(x_pos, y_pos, txt, 'FontSize', 10, 'BackgroundColor', 'w', 'EdgeColor', 'k');
+
+    hold off;
+end
+
+
+
+
+%%%%% MVPA for task 1 and 2 M and I %%%% 
+
+
+
+%%%%% MVPA for Task 1 and Task 2: M vs I %%%%%
+
+% Define ROI groups and group names
+roi_groups = struct(...
+    'premotor', [7], ...
+    'supplementary', [26], ...
+    'sensory', [17], ...
+    'cingulate', [29, 30], ...
+    'insula', [2] ...
+);
+group_names = fieldnames(roi_groups);
+num_groups = length(group_names);
+
+% Prepare data for classification
+X_I_vs_I = [X_ctrl_I_task1_clean; X_ctrl_I_task2_clean];
+y_I_vs_I = [zeros(size(X_ctrl_I_task1_clean, 1), 1); ones(size(X_ctrl_I_task2_clean, 1), 1)];
+
+X_M_vs_M = [X_ctrl_M_task1_clean; X_ctrl_M_task2_clean];
+y_M_vs_M = [zeros(size(X_ctrl_M_task1_clean, 1), 1); ones(size(X_ctrl_M_task2_clean, 1), 1)];
+
+% --- MVPA for full ROI set (all ROIs at once) ---
+cv = cvpartition(length(y_I_vs_I), 'KFold', 5);
+acc_all = zeros(cv.NumTestSets, 1);
+for i = 1:cv.NumTestSets
+    train_idx = training(cv, i);
+    test_idx = test(cv, i);
+    X_train = X_I_vs_I(train_idx, :);
+    y_train = y_I_vs_I(train_idx);
+    X_test = X_I_vs_I(test_idx, :);
+    y_test = y_I_vs_I(test_idx);
+
+    % Remove zero-variance features
+    var_train = var(X_train, 0, 1);
+    cols_keep = var_train > 0;
+    X_train = X_train(:, cols_keep);
+    X_test = X_test(:, cols_keep);
+
+    model = fitcdiscr(X_train, y_train, 'DiscrimType', 'diagLinear');
+    y_pred = predict(model, X_test);
+    acc_all(i) = mean(y_pred == y_test);
+end
+acc_I_vs_I = mean(acc_all);
+fprintf('Accuracy Task1 I vs Task2 I (all ROIs): %.2f%%\n', acc_I_vs_I * 100);
+
+% Repeat for Task1 M vs Task2 M
+cv = cvpartition(length(y_M_vs_M), 'KFold', 5);
+acc_all = zeros(cv.NumTestSets, 1);
+for i = 1:cv.NumTestSets
+    train_idx = training(cv, i);
+    test_idx = test(cv, i);
+    X_train = X_M_vs_M(train_idx, :);
+    y_train = y_M_vs_M(train_idx);
+    X_test = X_M_vs_M(test_idx, :);
+    y_test = y_M_vs_M(test_idx);
+
+    var_train = var(X_train, 0, 1);
+    cols_keep = var_train > 0;
+    X_train = X_train(:, cols_keep);
+    X_test = X_test(:, cols_keep);
+
+    model = fitcdiscr(X_train, y_train, 'DiscrimType', 'diagLinear');
+    y_pred = predict(model, X_test);
+    acc_all(i) = mean(y_pred == y_test);
+end
+acc_M_vs_M = mean(acc_all);
+fprintf('Accuracy Task1 M vs Task2 M (all ROIs): %.2f%%\n', acc_M_vs_M * 100);
+
+% --- MVPA ROI-wise accuracy ---
+acc_I_vs_I_roi = zeros(num_groups, 1);
+acc_M_vs_M_roi = zeros(num_groups, 1);
+
+for g = 1:num_groups
+    % ROI feature for Task1 I vs Task2 I
+    X_I_vs_I_roi = [X_ctrl_I_task1_clean(:, g); X_ctrl_I_task2_clean(:, g)];
+    y = y_I_vs_I;
+    
+    cv = cvpartition(length(y), 'KFold', 5);
+    acc_all = zeros(cv.NumTestSets, 1);
+    for i = 1:cv.NumTestSets
+        train_idx = training(cv, i);
+        test_idx = test(cv, i);
+
+        X_train = X_I_vs_I_roi(train_idx, :);
+        y_train = y(train_idx);
+        X_test = X_I_vs_I_roi(test_idx, :);
+        y_test = y(test_idx);
+
+        if var(X_train) == 0
+            acc_all(i) = NaN;
+            continue;
+        end
+
+        model = fitcdiscr(X_train, y_train, 'DiscrimType', 'diagLinear');
+        y_pred = predict(model, X_test);
+        acc_all(i) = mean(y_pred == y_test);
+    end
+    acc_I_vs_I_roi(g) = nanmean(acc_all);
+
+    % ROI feature for Task1 M vs Task2 M
+    X_M_vs_M_roi = [X_ctrl_M_task1_clean(:, g); X_ctrl_M_task2_clean(:, g)];
+    y = y_M_vs_M;
+
+    cv = cvpartition(length(y), 'KFold', 5);
+    acc_all = zeros(cv.NumTestSets, 1);
+    for i = 1:cv.NumTestSets
+        train_idx = training(cv, i);
+        test_idx = test(cv, i);
+
+        X_train = X_M_vs_M_roi(train_idx, :);
+        y_train = y(train_idx);
+        X_test = X_M_vs_M_roi(test_idx, :);
+        y_test = y(test_idx);
+
+        if var(X_train) == 0
+            acc_all(i) = NaN;
+            continue;
+        end
+
+        model = fitcdiscr(X_train, y_train, 'DiscrimType', 'diagLinear');
+        y_pred = predict(model, X_test);
+        acc_all(i) = mean(y_pred == y_test);
+    end
+    acc_M_vs_M_roi(g) = nanmean(acc_all);
+end
+
+% --- Visualization ---
+
+ % --- Visualization ---
+accuracies = [acc_I_vs_I_roi, acc_M_vs_M_roi] * 100; % percent
+roi_labels = group_names;
+
+% Create a figure with specified size
+figure;
+set(gcf, 'Position', [100, 100, 800, 600]);
+
+% Define bar positions
+x = 1:numel(roi_labels);
+bar_width = 0.35;
+
+% Create grouped bar plot
+hold on;
+b1 = bar(x - bar_width/2, accuracies(:, 1), bar_width, 'FaceColor', [0.2, 0.6, 1], 'EdgeColor', 'none');
+b2 = bar(x + bar_width/2, accuracies(:, 2), bar_width, 'FaceColor', [1, 0.6, 0], 'EdgeColor', 'none');
+hold off;
+
+% Set axis labels and title
+set(gca, 'XTickLabel', roi_labels, 'XTick', x);
+ylabel('Classification Accuracy (%)');
+xlabel('ROIs');
+title('MVPA Accuracy per ROI');
+
+% Add legend
+legend([b1, b2], {'Task1 I vs Task2 I', 'Task1 M vs Task2 M'}, 'Location', 'northwest');
+
+% Annotate each bar with its percentage
+for i = 1:numel(roi_labels)
+    text(x(i) - bar_width/2, accuracies(i, 1) + 2, sprintf('%.1f%%', accuracies(i, 1)), ...
+        'HorizontalAlignment', 'center', 'VerticalAlignment', 'bottom', 'FontSize', 10);
+    text(x(i) + bar_width/2, accuracies(i, 2) + 2, sprintf('%.1f%%', accuracies(i, 2)), ...
+        'HorizontalAlignment', 'center', 'VerticalAlignment', 'bottom', 'FontSize', 10);
+end
+
+% Adjust axes for better appearance
+set(gca, 'FontSize', 12, 'LineWidth', 1.5);
+box on;
+
+% Save the figure as a high-resolution PNG file
+saveas(gcf, 'mvpa_accuracy_per_roi.png', 'png');
+
+
+
+
+
+
+% --- Spearman correlation between Task 1 and Task 2 (M and I parts separately) ---
+
+% Prepare
+num_rois = length(fieldnames(roi_groups));
+group_names = fieldnames(roi_groups);
+
+corr_M_all_subs = nan(num_subjects, num_rois);  % Task1 M vs Task2 M
+corr_I_all_subs = nan(num_subjects, num_rois);  % Task1 I vs Task2 I
+
+subject_idx = 0;
+
+for subj = 1:total_subjects
+    if ismember(subj, missing_subjects)
+        continue;
+    end
+    subject_idx = subject_idx + 1;
+    subj_str = sprintf('%02d', subj);
+
+    % --- Load Task 1 ---
+    data1 = load(['ROIs_sub_' subj_str '_task1.mat']);
+    bold1 = data1.bold_data;
+    bold1_M = bold1(1:92, :);           % First 92 points
+    bold1_I = bold1(end-91:end, :);     % Last 92 points
+
+    % --- Load Task 2 ---
+    data2 = load(['ROIs_sub_' subj_str '_task2.mat']);
+    bold2 = data2.bold_data;
+    bold2_M = bold2(1:92, :);
+    bold2_I = bold2(end-91:end, :);
+
+    % --- Loop through ROIs ---
+    for g = 1:num_rois
+        roi_idx = roi_groups.(group_names{g});
+
+        % Average time series across voxels
+        ts1_M = mean(bold1_M(:, roi_idx), 2, 'omitnan');  % [92 x 1]
+        ts2_M = mean(bold2_M(:, roi_idx), 2, 'omitnan');
+        ts1_I = mean(bold1_I(:, roi_idx), 2, 'omitnan');
+        ts2_I = mean(bold2_I(:, roi_idx), 2, 'omitnan');
+
+        % Spearman correlation
+        r_M = corr(ts1_M, ts2_M, 'Type', 'Spearman', 'rows', 'complete');
+        r_I = corr(ts1_I, ts2_I, 'Type', 'Spearman', 'rows', 'complete');
+
+        corr_M_all_subs(subject_idx, g) = r_M;
+        corr_I_all_subs(subject_idx, g) = r_I;
+    end
+end
+
+% --- Average across subjects ---
+corr_M_avg = mean(corr_M_all_subs, 1, 'omitnan');
+corr_I_avg = mean(corr_I_all_subs, 1, 'omitnan');
+
+% --- Print results ---
+fprintf('\nSpearman correlation between Task 1 and Task 2 time series:\n');
+for g = 1:num_rois
+    fprintf('ROI %-14s | M corr = %.2f | I corr = %.2f\n', ...
+        group_names{g}, corr_M_avg(g), corr_I_avg(g));
+end
+
+
+% --- Compute mean and SEM
+mean_corr_M = mean(corr_M_all_subs, 1, 'omitnan');
+mean_corr_I = mean(corr_I_all_subs, 1, 'omitnan');
+sem_corr_M  = std(corr_M_all_subs, 0, 1, 'omitnan') ./ sqrt(sum(~isnan(corr_M_all_subs)));
+sem_corr_I  = std(corr_I_all_subs, 0, 1, 'omitnan') ./ sqrt(sum(~isnan(corr_I_all_subs)));
+
+num_rois = length(group_names);
+
+% --- Compute effect sizes (Cohen's d)
+effect_sizes = zeros(1, num_rois);
+for g = 1:num_rois
+    x = corr_M_all_subs(:, g);
+    y = corr_I_all_subs(:, g);
+    d = (mean(x, 'omitnan') - mean(y, 'omitnan')) / std([x; y], 'omitnan');
+    effect_sizes(g) = d;
+end
+
+% --- Bar plot
+figure;
+hold on;
+
+% Bar positions
+x = 1:num_rois;
+bar_width = 0.35;
+
+% Bars
+bar(x - bar_width/2, mean_corr_M, bar_width, 'FaceColor', [0.2 0.6 0.8], 'DisplayName', 'M');
+bar(x + bar_width/2, mean_corr_I, bar_width, 'FaceColor', [0.9 0.4 0.4], 'DisplayName', 'I');
+
+% Error bars
+errorbar(x - bar_width/2, mean_corr_M, sem_corr_M, 'k', 'LineStyle', 'none', 'CapSize', 5);
+errorbar(x + bar_width/2, mean_corr_I, sem_corr_I, 'k', 'LineStyle', 'none', 'CapSize', 5);
+
+
+% Inputs:
+% corr_M_all_subs: [n_subjects x n_ROIs] (Task1 M vs Task2 M)
+% corr_I_all_subs: [n_subjects x n_ROIs] (Task1 I vs Task2 I)
+% group_names: cell array with ROI names
+
+num_rois = length(group_names);
+
+% Compute mean and SEM
+mean_corr_M = mean(corr_M_all_subs, 1, 'omitnan');
+mean_corr_I = mean(corr_I_all_subs, 1, 'omitnan');
+
+sem_corr_M  = std(corr_M_all_subs, 0, 1, 'omitnan') ./ sqrt(sum(~isnan(corr_M_all_subs)));
+sem_corr_I  = std(corr_I_all_subs, 0, 1, 'omitnan') ./ sqrt(sum(~isnan(corr_I_all_subs)));
+
+% Compute effect sizes (Cohen's d vs 0)
+d_M = zeros(1, num_rois);
+d_I = zeros(1, num_rois);
+
+for g = 1:num_rois
+    xM = corr_M_all_subs(:, g);
+    xI = corr_I_all_subs(:, g);
+
+    d_M(g) = mean(xM, 'omitnan') / std(xM, 'omitnan');
+    d_I(g) = mean(xI, 'omitnan') / std(xI, 'omitnan');
+end
+
+% --- Prepare variables for plotting ---
+num_rois = length(group_names);
+x = 1:num_rois;
+bar_width = 0.35;
+
+% Compute means and SEMs
+mean_corr_M = mean(corr_M_all_subs, 1, 'omitnan');
+mean_corr_I = mean(corr_I_all_subs, 1, 'omitnan');
+
+sem_corr_M  = std(corr_M_all_subs, 0, 1, 'omitnan') ./ sqrt(sum(~isnan(corr_M_all_subs)));
+sem_corr_I  = std(corr_I_all_subs, 0, 1, 'omitnan') ./ sqrt(sum(~isnan(corr_I_all_subs)));
+
+% Compute Cohen's d effect sizes (mean/std per condition)
+d_M = mean_corr_M ./ std(corr_M_all_subs, 0, 1, 'omitnan');
+d_I = mean_corr_I ./ std(corr_I_all_subs, 0, 1, 'omitnan');
+
+% --- Plotting ---
+figure('Color', 'w', 'Position', [100 100 1000 500]);
+hold on;
+
+% Bars
+b1 = bar(x - bar_width/2, mean_corr_M, bar_width, 'FaceColor', [0.2 0.6 0.8], 'EdgeColor', 'none');
+b2 = bar(x + bar_width/2, mean_corr_I, bar_width, 'FaceColor', [0.9 0.4 0.4], 'EdgeColor', 'none');
+
+% Error bars
+errorbar(x - bar_width/2, mean_corr_M, sem_corr_M, 'k', 'LineStyle', 'none', 'LineWidth', 1.2, 'CapSize', 8);
+errorbar(x + bar_width/2, mean_corr_I, sem_corr_I, 'k', 'LineStyle', 'none', 'LineWidth', 1.2, 'CapSize', 8);
+
+% Annotate effect sizes above bars
+y_max_vals = max([mean_corr_M + sem_corr_M; mean_corr_I + sem_corr_I], [], 1);
+y_offset = 0.04;  % vertical space above error bars
+
+for g = 1:num_rois
+    text(x(g) - bar_width/2, y_max_vals(g) + y_offset, sprintf('d=%.2f', d_M(g)), ...
+        'HorizontalAlignment', 'center', 'FontSize', 10, 'FontWeight', 'bold', 'Color', [0.1 0.3 0.6]);
+    text(x(g) + bar_width/2, y_max_vals(g) + y_offset, sprintf('d=%.2f', d_I(g)), ...
+        'HorizontalAlignment', 'center', 'FontSize', 10, 'FontWeight', 'bold', 'Color', [0.7 0.2 0.2]);
+end
+
+% Axis formatting
+set(gca, 'XTick', x, 'XTickLabel', group_names, 'TickLabelInterpreter', 'none');
+xtickangle(45);
+ylabel('Spearman Correlation', 'FontSize', 14, 'FontWeight', 'bold');
+title('ROI-wise Spearman Correlation Between Task 1 and Task 2', 'FontSize', 16, 'FontWeight', 'bold');
+
+% Legend
+legend([b1, b2], {'M (Task1 vs Task2)', 'I (Task1 vs Task2)'}, ...
+    'Location', 'northoutside', 'Orientation', 'horizontal', 'FontSize', 12);
+
+% Y-axis limits and grid
+ylim([0 1.15]);
+grid on;
+box off;
+
+% Tighten figure margins
+set(gca, 'LineWidth', 1.5, 'FontSize', 12);
+hold off;
+
+
+
+
+% Inputs:
+% corr_M_all_subs: [n_subjects x n_ROIs] for Task1 M vs Task2 M
+% corr_I_all_subs: [n_subjects x n_ROIs] for Task1 I vs Task2 I
+% group_names: cell array of ROI names
+
+thresh = 0.3;  % Set your threshold for "reliable correlation"
+
+n_rois = length(group_names);
+n_subj = size(corr_M_all_subs, 1);
+
+% ----- M CONDITION -----
+% Binary mask: subject correlation > threshold
+M_mask = corr_M_all_subs > thresh;
+
+% Percentage of subjects per ROI
+M_perc = 100 * sum(M_mask, 1) / n_subj;
+
+% Effect size (Cohen's d vs 0)
+M_d = mean(M_mask, 1) ./ std(M_mask + 0.01, 0, 1);  % add epsilon to avoid div/0
+
+% ----- I CONDITION -----
+I_mask = corr_I_all_subs > thresh;
+I_perc = 100 * sum(I_mask, 1) / n_subj;
+I_d = mean(I_mask, 1) ./ std(I_mask + 0.01, 0, 1);
+
+% ----- PRINT RESULTS -----
+fprintf('=== M CONDITION (Task1 vs Task2) > %.2f ===\n', thresh);
+for g = 1:n_rois
+    fprintf('ROI %-14s: %.1f%% of subjects | d = %.2f\n', group_names{g}, M_perc(g), M_d(g));
+end
+
+fprintf('\n=== I CONDITION (Task1 vs Task2) > %.2f ===\n', thresh);
+for g = 1:n_rois
+    fprintf('ROI %-14s: %.1f%% of subjects | d = %.2f\n', group_names{g}, I_perc(g), I_d(g));
+end
+
+% ----- PLOTTING -----
+figure;
+
+subplot(1,2,1);
+bar(M_perc, 'FaceColor', [0.2 0.6 0.8]);
+title(sprintf('M Condition (Corr > %.2f)', thresh));
+ylabel('% of Subjects');
+xticks(1:n_rois);
+xticklabels(group_names);
+xtickangle(45);
+ylim([0 100]);
+grid on;
+for g = 1:n_rois
+    text(g, M_perc(g) + 2, sprintf('d=%.2f', M_d(g)), 'HorizontalAlignment', 'center', 'FontSize', 9);
+end
+
+subplot(1,2,2);
+bar(I_perc, 'FaceColor', [0.9 0.4 0.4]);
+title(sprintf('I Condition (Corr > %.2f)', thresh));
+ylabel('% of Subjects');
+xticks(1:n_rois);
+xticklabels(group_names);
+xtickangle(45);
+ylim([0 100]);
+grid on;
+for g = 1:n_rois
+    text(g, I_perc(g) + 2, sprintf('d=%.2f', I_d(g)), 'HorizontalAlignment', 'center', 'FontSize', 9);
+end
+
+%%%% CONJUNTION ANALISES %%%%
+
+%% ----------- CONJUNCTION ANALYSIS (M & I correlation > threshold) -----------
+
+% Inputs:
+% - corr_M_all_subs: [n_subjects x n_ROIs]
+% - corr_I_all_subs: [n_subjects x n_ROIs]
+% - group_names: cell array of ROI names
+
+threshold = 0.3;  % You can change this threshold
+
+[n_subs, n_rois] = size(corr_M_all_subs);
+
+% --- Binary masks ---
+M_mask = corr_M_all_subs > threshold;  % Subject × ROI
+I_mask = corr_I_all_subs > threshold;
+
+% --- Conjunction mask ---
+conj_mask = M_mask & I_mask;
+
+% --- Percent of subjects per ROI (conjunction) ---
+conj_percent = 100 * sum(conj_mask, 1) / n_subs;
+
+% --- Effect size for conjunction (Cohen's d vs 0) ---
+conj_d = mean(conj_mask, 1) ./ std(conj_mask + 0.01, 0, 1);  % +epsilon to avoid /0
+
+% --- Print summary ---
+fprintf('\n=== CONJUNCTION ANALYSIS (M and I both > %.2f) ===\n', threshold);
+for g = 1:n_rois
+    fprintf('ROI %-14s: %.1f%% of subjects | d = %.2f\n', group_names{g}, conj_percent(g), conj_d(g));
+end
+
+% --- Plotting ---
+figure;
+bar(conj_percent, 'FaceColor', [0.4 0.8 0.4]);
+title(sprintf('Conjunction: M & I corr > %.2f', threshold));
+ylabel('% of Subjects');
+xticks(1:n_rois);
+xticklabels(group_names);
+xtickangle(45);
+ylim([0 100]);
+grid on;
+
+% Annotate with effect size
+for g = 1:n_rois
+    text(g, conj_percent(g) + 2, sprintf('d=%.2f', conj_d(g)), ...
+        'HorizontalAlignment', 'center', 'FontSize', 9);
+end
+
+%% ======= Publication-Quality Plots: M and I Separately =======
+
+% Inputs assumed:
+% - group_names (cell array of ROI labels)
+% - M_perc, I_perc         : % of subjects with corr > threshold
+% - M_d, I_d               : Cohen's d
+% - threshold              : correlation threshold (e.g., 0.3)
+
+n_rois = length(group_names);
+x = 1:n_rois;
+bar_width = 0.6;
+
+% Create figure
+figure('Color', 'w', 'Position', [100, 100, 1200, 500]);
+
+% ----- M CONDITION -----
+subplot(1,2,1);
+b1 = bar(x, M_perc, bar_width, ...
+    'FaceColor', [0.2 0.6 0.8], ...
+    'EdgeColor', 'k', ...
+    'LineWidth', 1.2);
+
+% Annotate bars with percentages and Cohen’s d
+for g = 1:n_rois
+    text(x(g), M_perc(g) + 2, ...
+        sprintf('%.1f%%\nd=%.2f', M_perc(g), M_d(g)), ...
+        'HorizontalAlignment', 'center', ...
+        'FontSize', 11, 'FontWeight', 'bold');
+end
+
+% Formatting
+set(gca, 'XTick', x, 'XTickLabel', group_names, 'FontSize', 12, 'LineWidth', 1.5);
+xtickangle(45);
+ylabel('% Subjects (corr > 0.3)', 'FontSize', 14, 'FontWeight', 'bold');
+title('M Condition: Task 1 vs Task 2', 'FontSize', 16, 'FontWeight', 'bold');
+ylim([0, 100]);
+grid on;
+box off;
+
+% ----- I CONDITION -----
+subplot(1,2,2);
+b2 = bar(x, I_perc, bar_width, ...
+    'FaceColor', [0.9 0.4 0.4], ...
+    'EdgeColor', 'k', ...
+    'LineWidth', 1.2);
+
+% Annotate bars
+for g = 1:n_rois
+    text(x(g), I_perc(g) + 2, ...
+        sprintf('%.1f%%\nd=%.2f', I_perc(g), I_d(g)), ...
+        'HorizontalAlignment', 'center', ...
+        'FontSize', 11, 'FontWeight', 'bold');
+end
+
+% Formatting
+set(gca, 'XTick', x, 'XTickLabel', group_names, 'FontSize', 12, 'LineWidth', 1.5);
+xtickangle(45);
+ylabel('% Subjects (corr > 0.3)', 'FontSize', 14, 'FontWeight', 'bold');
+title('I Condition: Task 1 vs Task 2', 'FontSize', 16, 'FontWeight', 'bold');
+ylim([0, 100]);
+grid on;
+box off;
+
+% Optional: Export in publication format
+% saveas(gcf, 'corr_threshold_M_vs_I.png');
+% saveas(gcf, 'corr_threshold_M_vs_I.svg');
+
