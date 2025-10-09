@@ -1,0 +1,51 @@
+% ----------- CHECK FOR MULTICOLLINEARITY -----------
+
+fprintf('\n--- COLLINEARITY CHECK ---\n');
+
+% Combine predictors excluding intercept and head motion
+predictors = X_combined;
+
+% 1. Correlation matrix
+corr_matrix = corr(predictors);
+disp('Correlation matrix of predictors:');
+disp(corr_matrix);
+
+% Optional: visualize it
+figure('Color','w');
+imagesc(corr_matrix);
+colorbar;
+title('Predictor Correlation Matrix');
+xticks(1:num_predictors);
+yticks(1:num_predictors);
+xticklabels([group_names; group_names]);
+yticklabels([group_names; group_names]);
+xtickangle(45);
+axis square;
+
+% 2. VIF (Variance Inflation Factor)
+% For each predictor, regress it on all the others and compute VIF
+VIFs = zeros(1, size(predictors,2));
+for i = 1:size(predictors,2)
+    Xi = predictors(:, i);
+    X_others = predictors(:, setdiff(1:end, i));
+    b_i = X_others \ Xi;
+    Xi_pred = X_others * b_i;
+    R2_i = 1 - sum((Xi - Xi_pred).^2) / sum((Xi - mean(Xi)).^2);
+    VIFs(i) = 1 / (1 - R2_i);
+end
+
+% Print VIFs
+fprintf('Variance Inflation Factors (VIFs):\n');
+for i = 1:num_predictors
+    if i <= num_groups
+        key = [group_names{i} '_task1'];
+    else
+        key = [group_names{i - num_groups} '_task2'];
+    end
+    fprintf('%s: VIF = %.2f\n', pretty_names(key), VIFs(i));
+end
+
+% Interpret VIFs
+fprintf('\nInterpretation:\n');
+fprintf('- VIF > 5 suggests moderate multicollinearity.\n');
+fprintf('- VIF > 10 suggests high multicollinearity.\n\n');
