@@ -5,12 +5,13 @@ total_subjects = 47;
 valid_subjects = setdiff(1:total_subjects, missing_subjects);
 num_subjects = length(valid_subjects);
 
-% Define ROI groups including insula (assuming insula is ROI #34)
+% Define ROI groups including insula and dlPFC (ROIs 4 and 5)
 roi_groups.premotor      = [7];
 roi_groups.supplementary = [26];
 roi_groups.sensory       = [17];
 roi_groups.cingulate     = [29, 30];
 roi_groups.insula        = [34];
+roi_groups.dlPFC         = [4, 5];  % Ajout dlPFC
 
 group_names = fieldnames(roi_groups);
 num_groups = length(group_names);
@@ -236,9 +237,6 @@ for g = 1:num_plots
     grid on;
 end
 
-%%% THIS GUY is doing something wrong in thre loop bellow the code to print a Table %%% 
-
-
 % ----------- STRUCTURE DES RÉSULTATS -----------
 
 results = struct();
@@ -252,10 +250,10 @@ results.Significant = p_perm_holm(:) < 0.05;
 for g = 1:num_predictors
     if g <= num_groups
         roi_name = group_names{g};
-        task = 'Task1';
+        task = 'Control';  % Modification ici
     else
         roi_name = group_names{g - num_groups};
-        task = 'Task2';
+        task = 'INB';      % Modification ici
     end
     results.ROI{g} = roi_name;
     results.Task{g} = task;
@@ -268,6 +266,6 @@ results_table = struct2table(results);
 disp(results_table);
 
 % Sauvegarde optionnelle
-%% writetable(results_table, 'regression_results_ROIs.csv'); %%
-%% save('regression_results_ROIs.mat', 'results_table'); %%
+% writetable(results_table, 'regression_results_ROIs.csv');
+% save('regression_results_ROIs.mat', 'results_table');
 
