@@ -251,9 +251,6 @@ for g = 1:num_groups
 
     ax = axes('Position', [left, bottom, panel_w, panel_h]);
 
-    x
-
-
 
 %% Then plot just figure out how to plot dlPFC as well%%
 
