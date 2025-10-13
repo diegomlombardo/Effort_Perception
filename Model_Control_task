@@ -1,314 +1,42 @@
-% ----------- SETUP -----------
-
-missing_subjects = [1, 9, 35];
-total_subjects = 47;
-valid_subjects = setdiff(1:total_subjects, missing_subjects);
-num_subjects = length(valid_subjects);
-
-% Define ROI groups including insula (assuming insula is ROI #34)
-roi_groups.premotor      = [7];
-roi_groups.supplementary = [26];
-roi_groups.sensory       = [17];
-roi_groups.cingulate     = [29, 30];
-roi_groups.insula        = [34];
-
-group_names = fieldnames(roi_groups);
-num_groups = length(group_names);
-
-% Initialize BOLD data matrix for Task 1
-bold_task1 = nan(num_subjects, num_groups);
-
-% ----------- LOAD DATA -----------
-
-subject_idx = 0;
-for subj = 1:total_subjects
-    if ismember(subj, missing_subjects)
-        continue;
-    end
-    subject_idx = subject_idx + 1;
-    subj_str = sprintf('%02d', subj);
-    file_task1 = ['ROIs_sub_' subj_str '_task1.mat'];
-    data1 = load(file_task1); % loads variable 'bold_data' [time x 48]
-    bold1 = data1.bold_data;
-    for g = 1:num_groups
-        roi_indices = roi_groups.(group_names{g});
-        bold_task1(subject_idx, g) = mean(mean(bold1(:, roi_indices), 2), 'omitnan');
-    end
-end
-
-% ----------- LOAD BEHAVIOR AND HEAD MOTION -----------
-
-% pes_totals must be loaded externally before running
-if ~exist('pes_totals', 'var') || length(pes_totals) ~= num_subjects
-    error('pes_totals must be loaded and match valid subjects count');
-end
-if isrow(pes_totals)
-    pes_totals = pes_totals';
-end
-
-% head must be loaded externally, first column subj index, second column motion
-if ~exist('head', 'var') || size(head,1) ~= num_subjects
-    error('head must exist and have %d rows', num_subjects);
-end
-head_task1 = head(:, 2);
-
-% ----------- REMOVE OUTLIERS -----------
-
-threshold = 3;
-outlier_mask = any(abs(bold_task1) > threshold, 2);
-
-X_clean = bold_task1(~outlier_mask, :);
-y_clean = pes_totals(~outlier_mask);
-head_clean = head_task1(~outlier_mask);
-
-fprintf('Removed %d outliers\n', sum(outlier_mask));
-
-% ----------- NORMALIZE PREDICTORS -----------
-
-X_norm = (X_clean - mean(X_clean)) ./ std(X_clean);
-head_norm = (head_clean - mean(head_clean)) ./ std(head_clean);
-head_norm = head_norm(:); % Ensure column vector for concatenations
-
-% ----------- LINEAR REGRESSION -----------
-
-X_reg = [ones(size(X_norm,1), 1), X_norm, head_norm];
-[b,~,~,~,stats] = regress(y_clean, X_reg);
-
-n = size(X_reg,1);
-p = size(X_reg,2);
-df = n - p;
-
-y_pred = X_reg * b;
-residuals = y_clean - y_pred;
-sigma2 = sum(residuals.^2) / df;
-XTX_inv = inv(X_reg' * X_reg);
-se = sqrt(diag(sigma2 * XTX_inv));
-t_stats = b ./ se;
-p_uncorrected = 2 * (1 - tcdf(abs(t_stats), df));
-
-% ----------- PERMUTATION TEST -----------
-
-num_permutations = 10000;
-perm_betas = zeros(num_permutations, num_groups);
-
-for i = 1:num_permutations
-    y_perm = y_clean(randperm(length(y_clean)));
-    b_perm = regress(y_perm, X_reg);
-    perm_betas(i, :) = b_perm(2:(num_groups+1))';
-end
-
-observed_betas = b(2:(num_groups+1));
-p_perm_uncorrected = zeros(1, num_groups);
-
-for g = 1:num_groups
-    p_perm_uncorrected(g) = mean(abs(perm_betas(:, g)) >= abs(observed_betas(g)));
-end
-
-% ----------- HOLM-BONFERRONI CORRECTION -----------
-
-[p_sorted, sort_idx] = sort(p_perm_uncorrected);
-holm_p = zeros(size(p_perm_uncorrected));
-m = num_groups;
-
-for k = 1:m
-    holm_p(k) = min(1, (m - k + 1) * p_sorted(k));
-end
-
-for k = 2:m
-    if holm_p(k) < holm_p(k-1)
-        holm_p(k) = holm_p(k-1);
-    end
-end
-
-p_perm_holm = zeros(size(p_perm_uncorrected));
-p_perm_holm(sort_idx) = holm_p;
-
-% ----------- PARTIAL CORRELATIONS -----------
-
-all_vars = [X_norm, head_norm];
-num_vars = size(all_vars, 2);
-
-partial_rhos = nan(1, num_vars);
-partial_pvals = nan(1, num_vars);
-
-for v = 1:num_vars
-    ctrl_idx = setdiff(1:num_vars, v);
-    X_ctrl = all_vars(:, ctrl_idx);
-    
-    rank_v = tiedrank(all_vars(:, v));
-    rank_y = tiedrank(y_clean);
-    rank_ctrl = tiedrank(X_ctrl);
-    
-    X_ctrl_aug = [ones(size(X_ctrl,1),1), rank_ctrl];
-    
-    beta_v = X_ctrl_aug \ rank_v;
-    resid_v = rank_v - X_ctrl_aug * beta_v;
-    
-    beta_y = X_ctrl_aug \ rank_y;
-    resid_y = rank_y - X_ctrl_aug * beta_y;
-    
-    r = corrcoef(resid_v, resid_y);
-    partial_rhos(v) = r(1,2);
-    
-    r_val = partial_rhos(v);
-    t_stat = r_val * sqrt((n - length(ctrl_idx) - 2) / (1 - r_val^2));
-    p_val = 2 * (1 - tcdf(abs(t_stat), n - length(ctrl_idx) - 2));
-    partial_pvals(v) = p_val;
-end
-
-[p_sorted_pc, sort_idx_pc] = sort(partial_pvals);
-holm_pc = zeros(size(partial_pvals));
-for k = 1:length(partial_pvals)
-    holm_pc(k) = min(1, (length(partial_pvals) - k + 1) * p_sorted_pc(k));
-end
-for k = 2:length(partial_pvals)
-    if holm_pc(k) < holm_pc(k-1)
-        holm_pc(k) = holm_pc(k-1);
-    end
-end
-p_partial_holm = zeros(size(partial_pvals));
-p_partial_holm(sort_idx_pc) = holm_pc;
-
-% ----------- HELPER TO GET ASTERISKS -----------
-
-stars = cell(1, max(num_groups, num_vars));
-for idx = 1:max(num_groups,num_vars)
-    if idx <= num_groups
-        pval = p_perm_holm(idx);
-    else
-        pval = p_partial_holm(idx - num_groups);
-    end
-    if pval <= 0.001
-        stars{idx} = '***';
-    elseif pval <= 0.01
-        stars{idx} = '**';
-    elseif pval <= 0.05
-        stars{idx} = '*';
-    else
-        stars{idx} = '';
-    end
-end
-
-reg_stars = stars(1:num_groups);
-partial_stars = stars(1:num_vars);
-
-% ----------- PRINT RESULTS -----------
-
-fprintf('--- Task 1 Regression Results ---\n');
-fprintf('Intercept: %.4f\n', b(1));
-for g = 1:num_groups
-    fprintf('%s beta: %.4f, Holm-Bonferroni corrected p: %.4f %s\n', ...
-        group_names{g}, b(g+1), p_perm_holm(g), reg_stars{g});
-end
-fprintf('Head motion beta: %.4f, uncorrected p: %.4f\n', b(end), p_uncorrected(end));
-fprintf('R²=%.4f, F-stat=%.4f, overall p=%.4f\n', stats(1), stats(2), stats(3));
-
-fprintf('\n--- Task 1 Partial Correlations ---\n');
-for g = 1:num_groups
-    fprintf('%s partial rho=%.3f, Holm-Bonferroni p=%.4f %s\n', ...
-        group_names{g}, partial_rhos(g), p_partial_holm(g), partial_stars{g});
-end
-fprintf('Head motion partial rho=%.3f, Holm-Bonferroni p=%.4f %s\n', ...
-    partial_rhos(end), p_partial_holm(end), partial_stars{end});
-
-% ----------- PLOT REGRESSION WITH SHADED ERROR -----------
+% ----------- PRETTY NAMES FOR PLOTS -----------
 
 pretty_names = containers.Map( ...
-    {'premotor', 'supplementary', 'sensory', 'cingulate', 'insula'}, ...
-    {'Premotor', 'Supplementary Motor Area', 'Primary Sensory Cortex', 'Cingulate', 'Insula'});
+    {'premotor', 'supplementary', 'sensory', 'cingulate', 'insula', 'dlPFC'}, ...
+    {'Premotor Cortex', 'Supplementary Motor Area', 'Primary Sensory Cortex', ...
+     'Cingulate Cortex', 'Insular Cortex', 'dlPFC'});
+
+% ----------- FIGURE SETUP -----------
 
 figure('Color','w','Position',[100 100 1600 900]);
 
-% To center the bottom row subplots (2x3 layout) for 5 plots, place them at positions [1 2 3 5 6]:
-subplot_positions = [1 2 3 5 6];
+num_cols = 3;
+num_rows = 2;
+panel_w = 0.22;
+panel_h = 0.38;
+h_spacing = 0.07;
+v_spacing = 0.12;
+
+total_width = num_cols*panel_w + (num_cols-1)*h_spacing;
+left_start = (1 - total_width) / 2;
+bottom_start = 0.55;
+
+% ----------- PLOTTING REGRESSION PER ROI -----------
+
 for g = 1:num_groups
-    subplot(2,3,subplot_positions(g));
+    if g <= 3
+        row = 1;
+        col = g;
+    else
+        row = 2;
+        col = g - 3;
+    end
 
-    x = X_norm(:, g);
-    y = y_clean;
-    
-    x = x(:);
-    y = y(:);
+    left = left_start + (col - 1)*(panel_w + h_spacing);
+    bottom = bottom_start - (row - 1)*(panel_h + v_spacing);
 
-    ctrl_vars = setdiff(1:num_groups, g);
-    X_ctrl = [X_norm(:, ctrl_vars), head_norm]; 
+    ax = axes('Position', [left, bottom, panel_w, panel_h]);
 
-    X_ctrl_aug = [ones(size(X_ctrl,1),1), X_ctrl];
-
-    beta_x = X_ctrl_aug \ x;
-    beta_y = X_ctrl_aug \ y;
-
-    resid_x = x - X_ctrl_aug * beta_x;
-    resid_y = y - X_ctrl_aug * beta_y;
-
-    b_simple = regress(resid_y, [ones(length(resid_x),1), resid_x]);
-    x_fit = linspace(min(resid_x), max(resid_x), 100)';
-    y_fit = b_simple(1) + b_simple(2)*x_fit;
-
-    y_pred_simple = b_simple(1) + b_simple(2)*resid_x;
-    resid_simple = resid_y - y_pred_simple;
-    s_err = sqrt(sum(resid_simple.^2) / (length(resid_x)-2));
-
-    x_mean = mean(resid_x);
-    Sxx = sum((resid_x - x_mean).^2);
-    se_fit = s_err * sqrt(1/length(resid_x) + (x_fit - x_mean).^2 / Sxx);
-    t_val = tinv(0.975, length(resid_x)-2);
-
-    ci_upper = y_fit + t_val*se_fit;
-    ci_lower = y_fit - t_val*se_fit;
-
-    fill([x_fit; flipud(x_fit)], [ci_upper; flipud(ci_lower)], [0.85 0.9 1], 'EdgeColor', 'none');
-    hold on;
-
-    plot(x_fit, y_fit, 'b-', 'LineWidth', 2.5);
-    scatter(resid_x, resid_y, 80, 'filled', 'MarkerFaceColor', [0.2 0.2 0.8], 'MarkerFaceAlpha', 0.7);
-
-    % Calculate simple correlation stats
-    r_simple = corr(resid_x, resid_y);
-    R2_simple = r_simple^2;
-    p_simple = 2*(1 - tcdf(abs(r_simple*sqrt((length(resid_x)-2)/(1-r_simple^2))), length(resid_x)-2));
-    beta_val = b_simple(2);
-    stars = reg_stars{g};
-
-    pname = pretty_names(group_names{g});
-    title(sprintf('%s\n\\beta=%.3f, R^2=%.3f, p=%.3f %s', pname, beta_val, R2_simple, p_simple, stars), ...
-        'FontSize', 16, 'FontWeight', 'bold', 'HorizontalAlignment', 'center');
-    xlabel(sprintf('%s (Residualized)', pname), 'FontSize', 14);
-    ylabel('PES Total (Residualized)', 'FontSize', 14);
-    box on;
-    set(gca, 'FontSize', 13, 'LineWidth', 1.2);
-    grid off;
-    hold off;
-end
-
-% Turn off empty subplot (position 4)
-subplot(2,3,4);
-axis off;
-
-% ----------- PLOT PARTIAL CORRELATIONS -----------
-
-figure('Color','w','Position',[150 150 1100 450]);
-bar(partial_rhos, 'FaceColor', [0.3 0.7 0.9], 'EdgeColor', 'k', 'LineWidth', 1.8);
-hold on;
-
-partial_labels = cell(num_vars,1);
-for i = 1:num_groups
-    partial_labels{i} = pretty_names(group_names{i});
-end
-partial_labels{end} = 'Head Motion';
-
-set(gca, 'XTick', 1:num_vars, 'XTickLabel', partial_labels, 'FontSize', 14, 'TickLabelInterpreter', 'none');
-ylabel('Partial Spearman \rho', 'FontSize', 16);
-title('Partial Correlations Controlling for Other ROIs and Head Motion', 'FontSize', 18);
-ylim([-1 1]);
-box on;
-grid off;
-
-for v = 1:num_vars
-    y_bar = partial_rhos(v);
-    text(v, y_bar + 0.08*sign(y_bar), partial_stars{v}, 'FontSize', 18, 'HorizontalAlignment', 'center');
-end
-hold off;
+    x
 
 
 
