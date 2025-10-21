@@ -1,0 +1,18 @@
+
+flirt -in atlas.nii.gz \
+      -ref denoised_data.nii.gz \
+      -out atlas2func.nii.gz \
+      -omat atlas2func.mat \
+      -dof 6 \
+      -interp nearestneighbour
+Then apply it:
+
+
+flirt -in atlas.nii.gz \
+      -ref denoised_data.nii.gz \
+      -applyxfm -init atlas2func.mat \
+      -interp nearestneighbour \
+      -out atlas_resampled.nii.gz
+ 
+
+fslmeants -i denoised_data.nii.gz  -o all_rois_timeseries.txt --label=atlas_resampled.nii.gz
