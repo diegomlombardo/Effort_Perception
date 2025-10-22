@@ -13,6 +13,7 @@ roi_groups.sensory       = [17];
 roi_groups.cingulate     = [29, 30];
 roi_groups.supplementary = [26];
 roi_groups.insula        = [2];
+roi_groups.dlPFC 
 
 group_names = {'premotor', 'sensory', 'cingulate', 'supplementary', 'insula'};
 
