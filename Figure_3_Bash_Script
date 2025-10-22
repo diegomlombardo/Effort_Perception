@@ -1,0 +1,97 @@
+% create_roi_betas_volume.m
+% Map beta coefficients to ROIs in atlas and save NIfTI volumes
+
+% ------- User Parameters -------
+atlas_file = 'HarvardOxford-cort-maxprob-thr25-1mm.nii.gz';
+beta_files = {'beta_task1.mat', 'beta_task2.mat'};       % Your beta files
+output_volumes = {'roi_betas_task1.nii.gz', 'roi_betas_task2.nii.gz'}; % Output files
+addpath('/Users/diegolombardoisadie20252/Documents/MATLAB/NIfTI_20140122');  % NIfTI toolbox path
+
+% ROI definitions (correct order and indices)
+roi_groups.premotor      = [7];
+roi_groups.sensory       = [17];
+roi_groups.cingulate     = [29, 30];
+roi_groups.supplementary = [26];
+roi_groups.insula        = [2];
+
+group_names = {'premotor', 'sensory', 'cingulate', 'supplementary', 'insula'};
+
+% Load atlas
+atlas = load_nii(atlas_file);
+atlas_data = atlas.img;
+
+for task_idx = 1:length(beta_files)
+    % Load betas variable from .mat file
+    S = load(beta_files{task_idx});
+    if ~isfield(S, 'betas')
+        error('The file %s must contain a variable named "betas"', beta_files{task_idx});
+    end
+    betas = S.betas;
+
+    % Check betas length matches ROI groups
+    if length(betas) ~= length(group_names)
+        error('Number of betas in %s (%d) does not match number of ROIs (%d)', ...
+              beta_files{task_idx}, length(betas), length(group_names));
+    end
+
+    % Initialize output volume with NaNs
+    roi_volume = nan(size(atlas_data));
+
+    % Assign betas to each ROI
+    for i = 1:length(group_names)
+        roi_indices = roi_groups.(group_names{i});
+        mask = ismember(atlas_data, roi_indices);
+        roi_volume(mask) = betas(i);
+    end
+
+    % Save to NIfTI (float32 for NaNs)
+    out_nii = atlas;
+    out_nii.img = roi_volume;
+    out_nii.hdr.dime.datatype = 16;  % float32
+    out_nii.hdr.dime.bitpix = 32;
+
+    save_nii(out_nii, output_volumes{task_idx});
+    fprintf(' Saved %s\n', output_volumes{task_idx});
+end
+
+#!/bin/bash
+
+export FREESURFER_HOME=/Applications/freesurfer
+source $FREESURFER_HOME/SetUpFreeSurfer.sh
+export SUBJECTS_DIR=/Applications/freesurfer/subjects  # Update if needed
+
+for VOLUME in roi_betas_task1.nii.gz roi_betas_task2.nii.gz; do
+  for hemi in lh rh; do
+    OUT="${VOLUME%.nii.gz}_${hemi}.mgz"
+    mri_vol2surf --mov $VOLUME \
+                 --regheader fsaverage \
+                 --hemi $hemi \
+                 --o $OUT \
+                 --projfrac 0.5 \
+                 --interp trilinear
+    echo "Projected $VOLUME to $OUT"
+  done
+done
+
+v1 = load_nii('roi_betas_task1.nii.gz');
+v2 = load_nii('roi_betas_task2.nii.gz');
+
+vals1 = v1.img(~isnan(v1.img));
+vals2 = v2.img(~isnan(v2.img));
+
+cmin = min([vals1; vals2]);
+cmax = max([vals1; vals2]);
+
+fprintf('Global color scale min: %f, max: %f\n', cmin, cmax);
+
+% open two terminals that depends if your Freeview accept multiple windows or not% 
+
+
+freeview -f \
+  $SUBJECTS_DIR/fsaverage/surf/lh.inflated:overlay=roi_betas_task1_lh.mgz:overlay_threshold=cmin,cmax \
+  $SUBJECTS_DIR/fsaverage/surf/rh.inflated:overlay=roi_betas_task1_rh.mgz:overlay_threshold=cmin,cmax
+
+
+freeview -f \
+  $SUBJECTS_DIR/fsaverage/surf/lh.inflated:overlay=roi_betas_task2_lh.mgz:overlay_threshold=cmin,cmax \
+  $SUBJECTS_DIR/fsaverage/surf/rh.inflated:overlay=roi_betas_task2_rh.mgz:overlay_threshold=cmin,cmax
