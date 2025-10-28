@@ -1,0 +1,97 @@
+%% This guy makes average bold Force vs rest and INB vs Control %%%
+
+% ----------- SETUP -----------
+
+missing_subjects = [1, 9, 35];
+total_subjects = 47;
+valid_subjects = setdiff(1:total_subjects, missing_subjects);
+num_subjects = length(valid_subjects);
+
+% Define ROI groups including dlPFC (Superior + Middle Frontal Gyrus) and insula
+roi_groups.premotor      = [7];        % Precentral Gyrus
+roi_groups.supplementary = [26];       % Juxtapositional Lobule Cortex
+roi_groups.sensory       = [17];       % Postcentral Gyrus
+roi_groups.cingulate     = [29, 30];   % Cingulate Gyrus, Anterior & Posterior
+roi_groups.insula        = [2];        % Insular Cortex
+roi_groups.dlPFC         = [3, 4];     % Superior + Middle Frontal Gyrus (dlPFC)
+
+group_names = fieldnames(roi_groups);
+num_groups = length(group_names);
+
+% Initialize matrices to store mean BOLD for each subject and ROI group
+bold_task1_contraction = nan(num_subjects, num_groups);
+bold_task1_rest        = nan(num_subjects, num_groups);
+
+% ----------- PARAMETERS FOR BLOCK DESIGN -----------
+
+total_time_points = 184;  % Number of time points per session
+contraction_length = 6;   % 15 sec / 2.5 sec per TR = 6 time points
+rest_length = 10;         % 25 sec / 2.5 sec per TR = 10 time points
+num_contractions = 6;
+
+% ----------- CREATE LOGICAL INDEXING FOR REST AND CONTRACTION -----------
+
+is_contraction = false(total_time_points, 1);
+is_rest = false(total_time_points, 1);
+
+start_tp = 1;
+for c = 1:num_contractions
+    % Rest block first
+    rest_range = start_tp : min(start_tp + rest_length - 1, total_time_points);
+    is_rest(rest_range) = true;
+    
+    % Contraction block next
+    contraction_start = start_tp + rest_length;
+    contraction_range = contraction_start : min(contraction_start + contraction_length - 1, total_time_points);
+    is_contraction(contraction_range) = true;
+    
+    % Update for next cycle
+    start_tp = contraction_start + contraction_length;
+end
+
+% Any leftover time points after last contraction = rest
+if start_tp <= total_time_points
+    is_rest(start_tp:total_time_points) = true;
+end
+
+% ----------- LOAD DATA AND CALCULATE MEANS -----------
+
+subject_idx = 0;
+for subj = 1:total_subjects
+    if ismember(subj, missing_subjects)
+        continue;
+    end
+    subject_idx = subject_idx + 1;
+    subj_str = sprintf('%02d', subj);
+    file_task1 = ['ROIs_sub_' subj_str '_task1.mat'];
+    
+    % Load data (variable bold_data: [time x num_ROIs])
+    data1 = load(file_task1);
+    bold1 = data1.bold_data;  % [time x 48] assumed
+    
+    for g = 1:num_groups
+        roi_indices = roi_groups.(group_names{g});
+        
+        % Mean BOLD over ROIs for contraction time points
+        contraction_mean = mean(bold1(is_contraction, roi_indices), 'all', 'omitnan');
+        
+        % Mean BOLD over ROIs for rest time points
+        rest_mean = mean(bold1(is_rest, roi_indices), 'all', 'omitnan');
+        
+        bold_task1_contraction(subject_idx, g) = contraction_mean;
+        bold_task1_rest(subject_idx, g) = rest_mean;
+    end
+end
+
+% ----------- DISPLAY RESULTS -----------
+
+disp('Mean BOLD during contraction (subjects x ROI groups):');
+disp(bold_task1_contraction);
+
+disp('Mean BOLD during rest (subjects x ROI groups):');
+disp(bold_task1_rest);
+
+% Optional: compute task minus rest (activation)
+bold_task1_activation = bold_task1_contraction - bold_task1_rest;
+disp('Task minus rest (activation) per ROI group:');
+disp(bold_task1_activation);
