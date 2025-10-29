@@ -1,5 +1,10 @@
 %% This guy makes average bold Force vs rest and INB vs Control %%%
 
+%% Average BOLD – Force vs Rest (Task 1) and INB vs Control (Task 2)
+% --------------------------------------------------------------
+
+clear; clc;
+
 % ----------- SETUP -----------
 
 missing_subjects = [1, 9, 35];
@@ -7,91 +12,105 @@ total_subjects = 47;
 valid_subjects = setdiff(1:total_subjects, missing_subjects);
 num_subjects = length(valid_subjects);
 
-% Define ROI groups including dlPFC (Superior + Middle Frontal Gyrus) and insula
+% Define ROI groups
 roi_groups.premotor      = [7];        % Precentral Gyrus
-roi_groups.supplementary = [26];       % Juxtapositional Lobule Cortex
+roi_groups.supplementary = [26];       % Juxtapositional Lobule Cortex (SMA)
 roi_groups.sensory       = [17];       % Postcentral Gyrus
-roi_groups.cingulate     = [29, 30];   % Cingulate Gyrus, Anterior & Posterior
-roi_groups.insula        = [2];        % Insular Cortex
-roi_groups.dlPFC         = [3, 4];     % Superior + Middle Frontal Gyrus (dlPFC)
+roi_groups.cingulate     = [29, 30];   % Cingulate Gyrus (Anterior & Posterior)
+roi_groups.insula        = [2];        % Insula
+roi_groups.dlPFC         = [3, 4];     % dlPFC (Superior + Middle Frontal Gyrus)
 
 group_names = fieldnames(roi_groups);
 num_groups = length(group_names);
 
-% Initialize matrices to store mean BOLD for each subject and ROI group
+% Initialize matrices
 bold_task1_contraction = nan(num_subjects, num_groups);
 bold_task1_rest        = nan(num_subjects, num_groups);
+bold_task2_contraction = nan(num_subjects, num_groups);
+bold_task2_rest        = nan(num_subjects, num_groups);
 
-% ----------- PARAMETERS FOR BLOCK DESIGN -----------
+% ----------- BLOCK DESIGN PARAMETERS -----------
 
-total_time_points = 184;  % Number of time points per session
-contraction_length = 6;   % 15 sec / 2.5 sec per TR = 6 time points
-rest_length = 10;         % 25 sec / 2.5 sec per TR = 10 time points
+total_time_points = 184;
+contraction_length = 6;  % 15 s / 2.5 s per TR
+rest_length = 10;        % 25 s / 2.5 s per TR
 num_contractions = 6;
 
-% ----------- CREATE LOGICAL INDEXING FOR REST AND CONTRACTION -----------
-
+% Logical indices for contraction & rest
 is_contraction = false(total_time_points, 1);
 is_rest = false(total_time_points, 1);
 
 start_tp = 1;
 for c = 1:num_contractions
-    % Rest block first
     rest_range = start_tp : min(start_tp + rest_length - 1, total_time_points);
     is_rest(rest_range) = true;
-    
-    % Contraction block next
+
     contraction_start = start_tp + rest_length;
     contraction_range = contraction_start : min(contraction_start + contraction_length - 1, total_time_points);
     is_contraction(contraction_range) = true;
-    
-    % Update for next cycle
+
     start_tp = contraction_start + contraction_length;
 end
 
-% Any leftover time points after last contraction = rest
 if start_tp <= total_time_points
     is_rest(start_tp:total_time_points) = true;
 end
 
-% ----------- LOAD DATA AND CALCULATE MEANS -----------
+% ----------- LOOP OVER SUBJECTS -----------
 
 subject_idx = 0;
 for subj = 1:total_subjects
     if ismember(subj, missing_subjects)
         continue;
     end
+
     subject_idx = subject_idx + 1;
     subj_str = sprintf('%02d', subj);
+
+    % ---- Load Task 1 (Force) ----
     file_task1 = ['ROIs_sub_' subj_str '_task1.mat'];
-    
-    % Load data (variable bold_data: [time x num_ROIs])
     data1 = load(file_task1);
-    bold1 = data1.bold_data;  % [time x 48] assumed
-    
+    bold1 = data1.bold_data;  % [time x ROI]
+
+    % ---- Load Task 2 (INB vs Control) ----
+    file_task2 = ['ROIs_sub_' subj_str '_task2.mat'];
+    data2 = load(file_task2);
+    bold2 = data2.bold_data;
+
     for g = 1:num_groups
-        roi_indices = roi_groups.(group_names{g});
-        
-        % Mean BOLD over ROIs for contraction time points
-        contraction_mean = mean(bold1(is_contraction, roi_indices), 'all', 'omitnan');
-        
-        % Mean BOLD over ROIs for rest time points
-        rest_mean = mean(bold1(is_rest, roi_indices), 'all', 'omitnan');
-        
-        bold_task1_contraction(subject_idx, g) = contraction_mean;
-        bold_task1_rest(subject_idx, g) = rest_mean;
+        roi_idx = roi_groups.(group_names{g});
+
+        % ----- TASK 1 -----
+        bold_task1_contraction(subject_idx, g) = mean(bold1(is_contraction, roi_idx), 'all', 'omitnan');
+        bold_task1_rest(subject_idx, g)        = mean(bold1(is_rest, roi_idx), 'all', 'omitnan');
+
+        % ----- TASK 2 -----
+        bold_task2_contraction(subject_idx, g) = mean(bold2(is_contraction, roi_idx), 'all', 'omitnan');
+        bold_task2_rest(subject_idx, g)        = mean(bold2(is_rest, roi_idx), 'all', 'omitnan');
     end
 end
 
+% ----------- COMPUTE ACTIVATION (Task – Rest) -----------
+
+bold_task1_activation = bold_task1_contraction - bold_task1_rest;
+bold_task2_activation = bold_task2_contraction - bold_task2_rest;
+
 % ----------- DISPLAY RESULTS -----------
 
-disp('Mean BOLD during contraction (subjects x ROI groups):');
-disp(bold_task1_contraction);
-
-disp('Mean BOLD during rest (subjects x ROI groups):');
-disp(bold_task1_rest);
-
-% Optional: compute task minus rest (activation)
-bold_task1_activation = bold_task1_contraction - bold_task1_rest;
-disp('Task minus rest (activation) per ROI group:');
+disp('Task 1 (Force) – Activation per ROI group:');
 disp(bold_task1_activation);
+
+disp('Task 2 (INB vs Control) – Activation per ROI group:');
+disp(bold_task2_activation);
+
+% ----------- OPTIONAL: MEAN ACROSS SUBJECTS (ignore subject 27) -----------
+
+exclude_outlier = 27;
+valid_idx = valid_subjects ~= exclude_outlier;
+
+mean_task1 = mean(bold_task1_activation(valid_idx,:), 1, 'omitnan');
+mean_task2 = mean(bold_task2_activation(valid_idx,:), 1, 'omitnan');
+
+disp(' ');
+disp('Mean Activation (Task 1 vs Task 2) per ROI (excluding subject 27):');
+table(group_names, mean_task1', mean_task2', 'VariableNames', {'ROI','Task1_Force','Task2_INB'})
