@@ -215,3 +215,36 @@ grid on; box off;
 saveas(gcf,'ROI_Conjunction_Task1vsTask2.png');
 disp('Plot saved as ROI_Conjunction_Task1vsTask2.png');
 
+% ----------- NEW: PLOT DIFFERENCE IN AVERAGE ACTIVATION PROFILES -----------
+mean_contr_task1 = squeeze(mean(bold_contraction(:,:,1), 1, 'omitnan'));
+mean_contr_task2 = squeeze(mean(bold_contraction(:,:,2), 1, 'omitnan'));
+mean_rest_task1  = squeeze(mean(bold_rest(:,:,1), 1, 'omitnan'));
+mean_rest_task2  = squeeze(mean(bold_rest(:,:,2), 1, 'omitnan'));
+
+diff_contr = mean_contr_task1 - mean_contr_task2;
+diff_rest  = mean_rest_task1  - mean_rest_task2;
+
+figure('Color','w','Position',[200 200 900 450]);
+subplot(1,2,1);
+bar(x, diff_contr, 0.5, 'FaceColor',[0.2 0.6 0.8]);
+title('Task1 - Task2 Difference (Contraction)','FontSize',14);
+ylabel('Mean BOLD Difference','FontSize',13);
+set(gca,'XTick',x,'XTickLabel',group_names,'FontSize',12,'FontWeight','bold');
+xtickangle(30);
+grid on; box off;
+yline(0,'k--');
+
+subplot(1,2,2);
+bar(x, diff_rest, 0.5, 'FaceColor',[0.9 0.5 0.2]);
+title('Task1 - Task2 Difference (Rest)','FontSize',14);
+ylabel('Mean BOLD Difference','FontSize',13);
+set(gca,'XTick',x,'XTickLabel',group_names,'FontSize',12,'FontWeight','bold');
+xtickangle(30);
+grid on; box off;
+yline(0,'k--');
+
+sgtitle('Difference in Average Activation Profiles Between Task 1 and Task 2','FontSize',15,'FontWeight','bold');
+saveas(gcf, 'ROI_Difference_Task1vsTask2.png');
+disp('Plot saved as ROI_Difference_Task1vsTask2.png');
+
+
