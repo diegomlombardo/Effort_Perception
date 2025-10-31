@@ -1,1 +1,217 @@
+%% ----------- Extract Clean BOLD Matrices and Conjunction Analysis + Plot -----------
+
+% ----------- SETUP -----------
+clear; clc;
+
+missing_subjects = [1, 9, 35];
+total_subjects   = 47;
+valid_subjects   = setdiff(1:total_subjects, missing_subjects);
+num_subjects     = length(valid_subjects);
+
+% Define ROI groups
+roi_groups.premotor      = [7];
+roi_groups.supplementary = [26];
+roi_groups.sensory       = [17];
+roi_groups.cingulate     = [29, 30];
+roi_groups.insula        = [2];
+roi_groups.dlPFC         = [3, 4];
+
+group_names = fieldnames(roi_groups);
+num_groups  = numel(group_names);
+
+% ----------- PARAMETERS -----------
+TR = 3;                    % seconds per TR
+hemodynamic_lag_sec = 6;   % HRF delay (~6 s)
+hemodynamic_lag_TRs = round(hemodynamic_lag_sec / TR); % shift by 2 TRs
+
+total_time_points = 184;
+contraction_length = 5;    % 15 s / 3 s = 5 TR
+rest_length        = 8;    % 25 s / 3 s = 8 TR
+num_contractions   = 6;
+
+% ----------- BLOCK DESIGN INDEXING -----------
+is_contraction = false(total_time_points, 1);
+is_rest        = false(total_time_points, 1);
+
+start_tp = 1;
+for c = 1:num_contractions
+    % Rest block
+    rest_range = start_tp : min(start_tp + rest_length - 1, total_time_points);
+    is_rest(rest_range) = true;
+
+    % Contraction block
+    contraction_start = start_tp + rest_length;
+    contraction_range = contraction_start : ...
+        min(contraction_start + contraction_length - 1, total_time_points);
+    is_contraction(contraction_range) = true;
+
+    % Update
+    start_tp = contraction_start + contraction_length;
+end
+
+% Fill leftover as rest
+if start_tp <= total_time_points
+    is_rest(start_tp:end) = true;
+end
+
+% Apply hemodynamic lag shift
+is_contraction_shifted = [false(hemodynamic_lag_TRs,1); ...
+    is_contraction(1:end-hemodynamic_lag_TRs)];
+is_contraction = is_contraction_shifted;
+
+% ----------- INITIALIZE STORAGE -----------
+tasks = {'task1', 'task2'};
+num_tasks = numel(tasks);
+
+bold_contraction = nan(num_subjects, num_groups, num_tasks);
+bold_rest        = nan(num_subjects, num_groups, num_tasks);
+
+% ----------- LOAD AND PROCESS EACH TASK -----------
+for t = 1:num_tasks
+    task = tasks{t};
+    subject_idx = 0;
+
+    for subj = 1:total_subjects
+        if ismember(subj, missing_subjects)
+            continue;
+        end
+        subject_idx = subject_idx + 1;
+        subj_str = sprintf('%02d', subj);
+        file_name = ['ROIs_sub_' subj_str '_' task '.mat'];
+
+        if ~isfile(file_name)
+            warning('File not found: %s', file_name);
+            continue;
+        end
+
+        % Load data (variable bold_data: [time x num_ROIs])
+        data = load(file_name);
+        bold = data.bold_data;
+
+        for g = 1:num_groups
+            roi_indices = roi_groups.(group_names{g});
+
+            % Extract ROI time series for contraction and rest
+            contraction_data = bold(is_contraction, roi_indices);
+            rest_data        = bold(is_rest, roi_indices);
+
+            % Flatten and clean
+            contraction_data = contraction_data(:);
+            rest_data        = rest_data(:);
+            contraction_data(isoutlier(contraction_data, 'median')) = NaN;
+            rest_data(isoutlier(rest_data, 'median')) = NaN;
+
+            % Store mean BOLD (omit NaNs)
+            bold_contraction(subject_idx, g, t) = mean(contraction_data, 'omitnan');
+            bold_rest(subject_idx, g, t)        = mean(rest_data, 'omitnan');
+        end
+    end
+end
+
+% ----------- COMPUTE ACTIVATION (Contraction - Rest) -----------
+bold_activation = bold_contraction - bold_rest;  % [subjects x ROI x task]
+
+% Mean and SEM across subjects
+mean_act = squeeze(mean(bold_activation, 1, 'omitnan'));      % [ROI x task]
+sem_act  = squeeze(std(bold_activation, 0, 1, 'omitnan')) ./ sqrt(num_subjects);
+
+% ----------- SIMPLE CONJUNCTION (Task1 & Task2 both > 0) -----------
+conjunction_mask_simple = (mean_act(:,1) > 0) & (mean_act(:,2) > 0);
+
+T_conjunction_simple = table(group_names, mean_act(:,1), mean_act(:,2), conjunction_mask_simple, ...
+    'VariableNames', {'ROI','Task1_Act','Task2_Act','Conjunction_Positive'});
+
+disp('==== ROI Simple Conjunction (Task1 & Task2 Contraction > Rest) ====');
+disp(T_conjunction_simple);
+writetable(T_conjunction_simple, 'ROI_SimpleConjunction_Task1_Task2.csv');
+
+% ----------- STATISTICAL CONJUNCTION: Task 1 vs Task 2 -----------
+alpha = 0.05;
+
+% --- Paired t-tests for contraction ---
+[~, p_contr] = ttest(bold_contraction(:,:,1), bold_contraction(:,:,2));
+t_contr = nan(1, num_groups);
+for g = 1:num_groups
+    [~,~,~,stats] = ttest(bold_contraction(:,g,1), bold_contraction(:,g,2));
+    t_contr(g) = stats.tstat;
+end
+
+% --- Paired t-tests for rest ---
+[~, p_rest] = ttest(bold_rest(:,:,1), bold_rest(:,:,2));
+t_rest = nan(1, num_groups);
+for g = 1:num_groups
+    [~,~,~,stats] = ttest(bold_rest(:,g,1), bold_rest(:,g,2));
+    t_rest(g) = stats.tstat;
+end
+
+% --- Conjunction masks ---
+conjunction_contr = (t_contr > 0) & (p_contr < alpha);
+conjunction_rest  = (t_rest  > 0) & (p_rest  < alpha);
+global_conjunction = conjunction_contr & conjunction_rest;
+
+% --- Combine into table ---
+T_conj_stats = table(group_names, t_contr', p_contr', t_rest', p_rest', ...
+    conjunction_contr', conjunction_rest', global_conjunction', ...
+    'VariableNames', {'ROI','t_Contraction','p_Contraction','t_Rest','p_Rest', ...
+                      'Conj_Contraction','Conj_Rest','Conj_Both'});
+
+disp('==== ROI Statistical Conjunction Analysis: Task1 vs Task2 (Contraction & Rest) ====');
+disp(T_conj_stats);
+writetable(T_conj_stats, 'ROI_Conjunction_Task1vsTask2.csv');
+
+% ----------- PLOT ACTIVATION RESULTS -----------
+figure('Color','w','Position',[200 200 900 500]);
+hold on;
+x = 1:num_groups;
+bar_width = 0.35;
+
+b1 = bar(x - bar_width/2, mean_act(:,1), bar_width, 'FaceColor',[0.3 0.5 0.9], 'EdgeColor','none');
+b2 = bar(x + bar_width/2, mean_act(:,2), bar_width, 'FaceColor',[0.9 0.4 0.3], 'EdgeColor','none');
+
+errorbar(x - bar_width/2, mean_act(:,1), sem_act(:,1), 'k', 'linestyle','none', 'LineWidth',1.2);
+errorbar(x + bar_width/2, mean_act(:,2), sem_act(:,2), 'k', 'linestyle','none', 'LineWidth',1.2);
+
+% Add conjunction markers
+for i = 1:num_groups
+    if conjunction_mask_simple(i)
+        plot(x(i), max(mean_act(i,:)) + max(sem_act(i,:)) + 0.05, 'k*', 'MarkerSize',10, 'LineWidth',1.5);
+    end
+end
+
+set(gca,'XTick',x, 'XTickLabel',group_names, 'FontSize',12, 'FontWeight','bold');
+xtickangle(30);
+ylabel('Mean BOLD Activation (Contraction - Rest)','FontSize',13);
+legend({'Task 1','Task 2'},'Location','northwest','FontSize',11);
+title('ROI Activation for Task 1 and Task 2 (Contraction - Rest)','FontSize',14);
+grid on; box off;
+ylim([min(mean_act(:))-0.2, max(mean_act(:))+0.4]);
+saveas(gcf, 'ROI_Activation_Comparison.png');
+disp('Plot saved as ROI_Activation_Comparison.png');
+
+% ----------- PLOT CONJUNCTION RESULTS -----------
+figure('Color','w','Position',[200 200 800 400]);
+hold on;
+bar(x, t_contr, 0.4, 'FaceColor',[0.4 0.6 0.9]);
+bar(x, t_rest,  0.4, 'FaceColor',[0.9 0.6 0.4], 'FaceAlpha',0.6);
+
+for i = 1:num_groups
+    if conjunction_contr(i)
+        plot(x(i), t_contr(i)+0.3, 'b*', 'MarkerSize',10, 'LineWidth',1.5);
+    end
+    if conjunction_rest(i)
+        plot(x(i), t_rest(i)+0.3, 'r*', 'MarkerSize',10, 'LineWidth',1.5);
+    end
+    if global_conjunction(i)
+        plot(x(i), max([t_contr(i), t_rest(i)])+0.5, 'k^', 'MarkerSize',8, 'LineWidth',1.5);
+    end
+end
+
+set(gca,'XTick',x, 'XTickLabel',group_names, 'FontSize',12, 'FontWeight','bold');
+xtickangle(30);
+ylabel('t-value (Task1 vs Task2)','FontSize',13);
+legend({'Contraction','Rest'},'Location','northwest');
+title('ROI Conjunction: Task 1 vs Task 2 (Contraction & Rest)');
+grid on; box off;
+saveas(gcf,'ROI_Conjunction_Task1vsTask2.png');
+disp('Plot saved as ROI_Conjunction_Task1vsTask2.png');
 
