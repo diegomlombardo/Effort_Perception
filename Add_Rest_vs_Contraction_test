@@ -1,8 +1,14 @@
+%% ========================================================================
+%                    ROI–PES CORRELATION ANALYSIS PIPELINE
+%                 Publication-quality version (non-overlapping bars)
+%                  (with inverted sign of ROI values)
+% ========================================================================
+
 %% ----------- SETUP -----------
 missing_subjects = [1, 9, 35];
-total_subjects = 47;
-valid_subjects = setdiff(1:total_subjects, missing_subjects);
-num_subjects = length(valid_subjects);
+total_subjects   = 47;
+valid_subjects   = setdiff(1:total_subjects, missing_subjects);
+num_subjects     = length(valid_subjects);
 
 % Define ROI groups
 roi_groups.premotor      = [7];        
@@ -13,7 +19,7 @@ roi_groups.insula        = [2];
 roi_groups.dlPFC         = [3, 4];    
 
 group_names = fieldnames(roi_groups);
-num_groups = length(group_names);
+num_groups  = length(group_names);
 
 % Initialize matrices to store mean BOLD per subject and ROI
 bold_task1_contraction = nan(num_subjects, num_groups);
@@ -62,11 +68,6 @@ for subj = 1:total_subjects
     bold1 = 100 * (bold1 - mean(bold1, 1)) ./ mean(bold1, 1);
     bold2 = 100 * (bold2 - mean(bold2, 1)) ./ mean(bold2, 1);
 
-    %% ---- INVERT SIGN OF NORMALIZED ROIs ----
-    % This will flip the direction of correlations (inverse association)
-    bold1 = -bold1;
-    bold2 = -bold2;
-
     %% ---- COMPUTE CONDITION MEANS ----
     for g = 1:num_groups
         roi_indices = roi_groups.(group_names{g});
@@ -102,6 +103,13 @@ for subj = 1:total_subjects
         bold_task2_rest(subject_idx,g) = mean(seg2_rest,'omitnan');
     end
 end
+
+%% ----------- INVERT SIGN OF ROI VALUES -----------
+% (So that brain–behavior correlations are inverted in sign)
+bold_task1_contraction = -bold_task1_contraction;
+bold_task1_rest        = -bold_task1_rest;
+bold_task2_contraction = -bold_task2_contraction;
+bold_task2_rest        = -bold_task2_rest;
 
 %% ----------- ALIGN PES TOTALS SAFELY -----------
 fprintf('\n--- Checking PES data consistency ---\n');
@@ -171,48 +179,65 @@ T = table(group_names, ...
 disp('Correlation of each ROI (Contraction vs Rest) with PES scores (r and p-values):');
 disp(T);
 
-%% ----------- PLOT RESULTS (r-values only) -----------
-figure;
-bar([corr_task1_con; corr_task1_rest; corr_task2_con; corr_task2_rest]');
-xticklabels(group_names);
-ylabel('Correlation (r) with PES');
-legend({'Task1-Contraction','Task1-Rest','Task2-Contraction','Task2-Rest'},'Location','best');
-title('ROI-wise Correlation of % BOLD (Contraction vs Rest) with PES Scores');
-grid on;
-
-%% ----------- OPTIONAL: SAVE RESULTS -----------
 writetable(T, 'ROI_PES_correlations_with_pvalues.csv');
 fprintf('\nResults saved to: ROI_PES_correlations_with_pvalues.csv\n');
 
-%% ----------- PLOT RESULTS (r-values with significance asterisks) -----------
-figure;
-hold on;
+%% ========================================================================
+%                         PUBLICATION-QUALITY PLOT
+% ========================================================================
 
-% Combine r-values for easier plotting
 r_all = [corr_task1_con; corr_task1_rest; corr_task2_con; corr_task2_rest]';
-p_all = [p_task1_con; p_task1_rest; p_task2_con; p_task2_rest]';
-
+p_all = [p_task1_con;   p_task1_rest;   p_task2_con;   p_task2_rest]';
 num_conditions = size(r_all,2);
-hBar = bar(r_all);
 
-% Set x-tick labels
-xticks(1:num_groups);
-xticklabels(group_names);
-ylabel('Correlation (r) with PES');
-title('ROI-wise Correlation of % BOLD (Contraction vs Rest) with PES Scores');
+figure('Color','w','Position',[100 100 950 550]); hold on;
 
-% Add asterisks for significant correlations
+% Define a colorblind-friendly palette
+colors = [
+    0.27 0.49 0.77;  % Task1 Contraction
+    0.53 0.80 0.98;  % Task1 Rest
+    0.82 0.29 0.29;  % Task2 Contraction
+    0.95 0.64 0.64]; % Task2 Rest
+
+% Create grouped bar plot (non-overlapping)
+b = bar(r_all, 'grouped'); 
+for k = 1:num_conditions
+    b(k).FaceColor = colors(k,:);
+    b(k).EdgeColor = 'none';
+    b(k).FaceAlpha = 0.9;
+end
+
+% --- Add significance markers ---
+yl = ylim;
+y_offset = 0.08 * range(yl);  % vertical spacing above bars
 for g = 1:num_groups
     for c = 1:num_conditions
-        if p_all(g,c) < 0.05
+        if ~isnan(p_all(g,c)) && p_all(g,c) < 0.05
+            x = b(c).XData(g) + b(c).XOffset;
             y = r_all(g,c);
-            text(g, y + 0.02*max(r_all(:)), '*', ...
-                'HorizontalAlignment','center', 'FontSize',14,'Color','red');
+            % Place asterisk clearly above the bar, not touching it
+            text(x, y + y_offset*sign(y + eps), '*', ...
+                'HorizontalAlignment', 'center', ...
+                'VerticalAlignment', 'bottom', ...
+                'FontSize', 16, 'FontWeight', 'bold', ...
+                'Color', [0 0 0]);
         end
     end
 end
 
-legend({'Task1-Contraction','Task1-Rest','Task2-Contraction','Task2-Rest'},'Location','best');
+% --- Aesthetic tuning ---
+xticks(1:num_groups);
+xticklabels(group_names);
+ylabel('Correlation (r) with PES', 'FontSize', 14);
+title('ROI-wise Correlation between %BOLD and PES (Inverted Sign)', 'FontWeight', 'bold', 'FontSize', 15);
+legend({'Task1-Contraction','Task1-Rest','Task2-Contraction','Task2-Rest'}, ...
+    'Location','northoutside','Orientation','horizontal','Box','off','FontSize',12);
+set(gca,'FontSize',13,'LineWidth',1.2,'Box','off');
 grid on;
-hold off;
+ylim([-1 1]);
 
+% --- Export high-resolution version ---
+set(gcf,'PaperPositionMode','auto');
+print('ROI_PES_correlations_publication_inverted','-dpng','-r600');
+
+fprintf('\n✓ Publication-quality figure saved: ROI_PES_correlations_publication_inverted.png\n');
