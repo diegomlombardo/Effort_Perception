@@ -1,141 +1,218 @@
-%% This guy makes average bold Force vs rest AND INB vs Control contrast %%%
-
-
-%% ----------- Average BOLD Force vs Rest (Task 1 & 2) with HRF Lag -----------
-
-% ----------- SETUP -----------
-
+%% ----------- SETUP -----------
 missing_subjects = [1, 9, 35];
-total_subjects   = 47;
-valid_subjects   = setdiff(1:total_subjects, missing_subjects);
-num_subjects     = length(valid_subjects);
+total_subjects = 47;
+valid_subjects = setdiff(1:total_subjects, missing_subjects);
+num_subjects = length(valid_subjects);
 
 % Define ROI groups
-roi_groups.premotor      = [7];        % Precentral Gyrus
-roi_groups.supplementary = [26];       % Juxtapositional Lobule Cortex
-roi_groups.sensory       = [17];       % Postcentral Gyrus
-roi_groups.cingulate     = [29, 30];   % Cingulate Gyrus, Anterior & Posterior
-roi_groups.insula        = [2];        % Insular Cortex
-roi_groups.dlPFC         = [3, 4];     % Superior + Middle Frontal Gyrus (dlPFC)
+roi_groups.premotor      = [7];        
+roi_groups.supplementary = [26];       
+roi_groups.sensory       = [17];       
+roi_groups.cingulate     = [29, 30];  
+roi_groups.insula        = [2];        
+roi_groups.dlPFC         = [3, 4];    
 
 group_names = fieldnames(roi_groups);
-num_groups  = length(group_names);
+num_groups = length(group_names);
 
-% ----------- PARAMETERS FOR BLOCK DESIGN -----------
+% Initialize matrices to store mean BOLD per subject and ROI
+bold_task1_contraction = nan(num_subjects, num_groups);
+bold_task1_rest        = nan(num_subjects, num_groups);
+bold_task2_contraction = nan(num_subjects, num_groups);
+bold_task2_rest        = nan(num_subjects, num_groups);
 
-TR = 3;                    % seconds per TR
-hemodynamic_lag_sec = 6;   % ~6 sec BOLD response delay
-hemodynamic_lag_TRs = round(hemodynamic_lag_sec / TR); % 2 TR shift
+%% ----------- PARAMETERS FOR BLOCK DESIGN -----------
+total_time_points = 184;  
+contraction_length = 6;   
+rest_length = 10;         
+num_contractions = 6;
 
-total_time_points = 184;   % time points per run
-contraction_length = 5;    % 15 sec / 3 sec per TR = 5 TRs
-rest_length        = 8;    % 25 sec / 3 sec per TR ≈ 8 TRs
-num_contractions   = 6;
-
-% ----------- CREATE LOGICAL INDEXING FOR REST AND CONTRACTION -----------
-
+% Logical indexing for contraction and rest blocks
 is_contraction = false(total_time_points, 1);
-is_rest        = false(total_time_points, 1);
-
 start_tp = 1;
 for c = 1:num_contractions
-    % Rest block first
     rest_range = start_tp : min(start_tp + rest_length - 1, total_time_points);
-    is_rest(rest_range) = true;
-    
-    % Contraction block next
     contraction_start = start_tp + rest_length;
-    contraction_range = contraction_start : ...
-        min(contraction_start + contraction_length - 1, total_time_points);
+    contraction_range = contraction_start : min(contraction_start + contraction_length - 1, total_time_points);
     is_contraction(contraction_range) = true;
-    
-    % Update for next cycle
     start_tp = contraction_start + contraction_length;
 end
+is_rest = ~is_contraction;
 
-% Any leftover time points after last contraction = rest
-if start_tp <= total_time_points
-    is_rest(start_tp:total_time_points) = true;
+%% ----------- LOAD DATA AND CALCULATE CLEAN MEANS -----------
+subject_idx = 0;
+for subj = 1:total_subjects
+    if ismember(subj, missing_subjects)
+        continue;
+    end
+    subject_idx = subject_idx + 1;
+    subj_str = sprintf('%02d', subj);
+    
+    % Load Task 1
+    file_task1 = ['ROIs_sub_' subj_str '_task1.mat'];
+    data1 = load(file_task1);
+    bold1 = data1.bold_data;  % [time x num_ROIs]
+    
+    % Load Task 2
+    file_task2 = ['ROIs_sub_' subj_str '_task2.mat'];
+    data2 = load(file_task2);
+    bold2 = data2.bold_data;  % [time x num_ROIs]
+
+    %% ---- NORMALIZE TO PERCENT SIGNAL CHANGE ----
+    bold1 = 100 * (bold1 - mean(bold1, 1)) ./ mean(bold1, 1);
+    bold2 = 100 * (bold2 - mean(bold2, 1)) ./ mean(bold2, 1);
+
+    %% ---- INVERT SIGN OF NORMALIZED ROIs ----
+    % This will flip the direction of correlations (inverse association)
+    bold1 = -bold1;
+    bold2 = -bold2;
+
+    %% ---- COMPUTE CONDITION MEANS ----
+    for g = 1:num_groups
+        roi_indices = roi_groups.(group_names{g});
+        
+        % Restrict indices to existing columns
+        roi_indices1 = roi_indices(roi_indices <= size(bold1,2));
+        roi_indices2 = roi_indices(roi_indices <= size(bold2,2));
+        if isempty(roi_indices1) || isempty(roi_indices2)
+            warning('ROI %s not present in data. Skipping.', group_names{g});
+            continue;
+        end
+        
+        % ---- TASK 1 ----
+        seg1_con = bold1(is_contraction, roi_indices1);
+        seg1_con = seg1_con(:);
+        seg1_con(isoutlier(seg1_con,'median')) = NaN;
+        bold_task1_contraction(subject_idx,g) = mean(seg1_con,'omitnan');
+
+        seg1_rest = bold1(is_rest, roi_indices1);
+        seg1_rest = seg1_rest(:);
+        seg1_rest(isoutlier(seg1_rest,'median')) = NaN;
+        bold_task1_rest(subject_idx,g) = mean(seg1_rest,'omitnan');
+        
+        % ---- TASK 2 ----
+        seg2_con = bold2(is_contraction, roi_indices2);
+        seg2_con = seg2_con(:);
+        seg2_con(isoutlier(seg2_con,'median')) = NaN;
+        bold_task2_contraction(subject_idx,g) = mean(seg2_con,'omitnan');
+
+        seg2_rest = bold2(is_rest, roi_indices2);
+        seg2_rest = seg2_rest(:);
+        seg2_rest(isoutlier(seg2_rest,'median')) = NaN;
+        bold_task2_rest(subject_idx,g) = mean(seg2_rest,'omitnan');
+    end
 end
 
-% ---- Apply Hemodynamic Lag ----
-is_contraction_shifted = [false(hemodynamic_lag_TRs,1); ...
-    is_contraction(1:end-hemodynamic_lag_TRs)];
-is_contraction = is_contraction_shifted;
+%% ----------- ALIGN PES TOTALS SAFELY -----------
+fprintf('\n--- Checking PES data consistency ---\n');
+fprintf('Length of pes_totals: %d | Expected total subjects: %d | Valid subjects: %d\n', ...
+    length(pes_totals), total_subjects, num_subjects);
 
-% ----------- INITIALIZE STORAGE -----------
+if length(pes_totals) < total_subjects
+    warning('pes_totals has only %d entries (expected %d). Assuming it already excludes missing subjects.', ...
+        length(pes_totals), total_subjects);
+    pes_clean = pes_totals;
+elseif length(pes_totals) == total_subjects
+    pes_clean = pes_totals(valid_subjects);
+else
+    error('Unexpected length of pes_totals: %d. Please verify your PES data.', length(pes_totals));
+end
 
-tasks = {'task1', 'task2'};
-num_tasks = numel(tasks);
+if length(pes_clean) ~= num_subjects
+    error('Mismatch: pes_clean (%d) and valid subjects (%d) differ in length.', ...
+        length(pes_clean), num_subjects);
+end
+fprintf('✓ PES data aligned correctly.\n\n');
 
-bold_contraction = nan(num_subjects, num_groups, num_tasks);
-bold_rest        = nan(num_subjects, num_groups, num_tasks);
+%% ----------- CORRELATIONS (with p-values) -----------
+corr_task1_con = nan(1,num_groups);  p_task1_con = nan(1,num_groups);
+corr_task1_rest = nan(1,num_groups); p_task1_rest = nan(1,num_groups);
+corr_task2_con = nan(1,num_groups);  p_task2_con = nan(1,num_groups);
+corr_task2_rest = nan(1,num_groups); p_task2_rest = nan(1,num_groups);
 
-% ----------- LOOP THROUGH TASKS AND SUBJECTS -----------
-
-for t = 1:num_tasks
-    task = tasks{t};
-    subject_idx = 0;
+for g = 1:num_groups
+    % Task 1 Contraction
+    idx = ~isnan(bold_task1_contraction(:,g)) & ~isnan(pes_clean);
+    if sum(idx) > 1
+        [corr_task1_con(g), p_task1_con(g)] = corr(bold_task1_contraction(idx,g), pes_clean(idx));
+    end
     
-    for subj = 1:total_subjects
-        if ismember(subj, missing_subjects)
-            continue;
-        end
-        subject_idx = subject_idx + 1;
-        subj_str = sprintf('%02d', subj);
-        file_name = ['ROIs_sub_' subj_str '_' task '.mat'];
-        
-        if ~isfile(file_name)
-            warning('File not found: %s', file_name);
-            continue;
-        end
-        
-        % Load data (variable bold_data: [time x num_ROIs])
-        data = load(file_name);
-        bold = data.bold_data;  % [time x 48] assumed
-        
-        % ---- Compute per ROI group ----
-        for g = 1:num_groups
-            roi_indices = roi_groups.(group_names{g});
-            
-            % Extract ROI data for contraction and rest
-            contraction_data = bold(is_contraction, roi_indices);
-            rest_data        = bold(is_rest, roi_indices);
-            
-            % Flatten and remove outliers
-            contraction_data = contraction_data(:);
-            rest_data        = rest_data(:);
-            contraction_data(isoutlier(contraction_data, 'median')) = NaN;
-            rest_data(isoutlier(rest_data, 'median')) = NaN;
-            
-            % Compute mean after removing outliers
-            bold_contraction(subject_idx, g, t) = mean(contraction_data, 'omitnan');
-            bold_rest(subject_idx, g, t)        = mean(rest_data, 'omitnan');
+    % Task 1 Rest
+    idx = ~isnan(bold_task1_rest(:,g)) & ~isnan(pes_clean);
+    if sum(idx) > 1
+        [corr_task1_rest(g), p_task1_rest(g)] = corr(bold_task1_rest(idx,g), pes_clean(idx));
+    end
+
+    % Task 2 Contraction
+    idx = ~isnan(bold_task2_contraction(:,g)) & ~isnan(pes_clean);
+    if sum(idx) > 1
+        [corr_task2_con(g), p_task2_con(g)] = corr(bold_task2_contraction(idx,g), pes_clean(idx));
+    end
+
+    % Task 2 Rest
+    idx = ~isnan(bold_task2_rest(:,g)) & ~isnan(pes_clean);
+    if sum(idx) > 1
+        [corr_task2_rest(g), p_task2_rest(g)] = corr(bold_task2_rest(idx,g), pes_clean(idx));
+    end
+end
+
+%% ----------- DISPLAY RESULTS -----------
+T = table(group_names, ...
+    corr_task1_con', p_task1_con', ...
+    corr_task1_rest', p_task1_rest', ...
+    corr_task2_con', p_task2_con', ...
+    corr_task2_rest', p_task2_rest', ...
+    'VariableNames', {'ROI', ...
+    'Task1_Contraction_r','Task1_Contraction_p', ...
+    'Task1_Rest_r','Task1_Rest_p', ...
+    'Task2_Contraction_r','Task2_Contraction_p', ...
+    'Task2_Rest_r','Task2_Rest_p'});
+
+disp('Correlation of each ROI (Contraction vs Rest) with PES scores (r and p-values):');
+disp(T);
+
+%% ----------- PLOT RESULTS (r-values only) -----------
+figure;
+bar([corr_task1_con; corr_task1_rest; corr_task2_con; corr_task2_rest]');
+xticklabels(group_names);
+ylabel('Correlation (r) with PES');
+legend({'Task1-Contraction','Task1-Rest','Task2-Contraction','Task2-Rest'},'Location','best');
+title('ROI-wise Correlation of % BOLD (Contraction vs Rest) with PES Scores');
+grid on;
+
+%% ----------- OPTIONAL: SAVE RESULTS -----------
+writetable(T, 'ROI_PES_correlations_with_pvalues.csv');
+fprintf('\nResults saved to: ROI_PES_correlations_with_pvalues.csv\n');
+
+%% ----------- PLOT RESULTS (r-values with significance asterisks) -----------
+figure;
+hold on;
+
+% Combine r-values for easier plotting
+r_all = [corr_task1_con; corr_task1_rest; corr_task2_con; corr_task2_rest]';
+p_all = [p_task1_con; p_task1_rest; p_task2_con; p_task2_rest]';
+
+num_conditions = size(r_all,2);
+hBar = bar(r_all);
+
+% Set x-tick labels
+xticks(1:num_groups);
+xticklabels(group_names);
+ylabel('Correlation (r) with PES');
+title('ROI-wise Correlation of % BOLD (Contraction vs Rest) with PES Scores');
+
+% Add asterisks for significant correlations
+for g = 1:num_groups
+    for c = 1:num_conditions
+        if p_all(g,c) < 0.05
+            y = r_all(g,c);
+            text(g, y + 0.02*max(r_all(:)), '*', ...
+                'HorizontalAlignment','center', 'FontSize',14,'Color','red');
         end
     end
 end
 
-% ----------- COMPUTE ACTIVATION (MOVEMENT - REST) -----------
-
-bold_activation = bold_contraction - bold_rest; % [subjects x ROI x task]
-mean_activation = squeeze(mean(bold_activation, 1, 'omitnan')); % [ROI x task]
-
-% ----------- CREATE COMPARISON TABLE -----------
-
-ROI_Names = group_names;
-Task1_Activation = mean_activation(:,1);
-Task2_Activation = mean_activation(:,2);
-Diff_Task2_minus_Task1 = Task2_Activation - Task1_Activation;
-
-T = table(ROI_Names, Task1_Activation, Task2_Activation, Diff_Task2_minus_Task1);
-
-% ----------- DISPLAY RESULTS -----------
-
-disp('==== Mean ROI Activation (Contraction - Rest) ====');
-disp(T);
-
-% Optional: Save the results
-writetable(T, 'ROI_Activation_Comparison_Task1_vs_Task2.csv');
-
-% ----------- END OF SCRIPT -----------
+legend({'Task1-Contraction','Task1-Rest','Task2-Contraction','Task2-Rest'},'Location','best');
+grid on;
+hold off;
 
