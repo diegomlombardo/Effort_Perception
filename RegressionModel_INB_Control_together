@@ -1,4 +1,3 @@
-
 % ----------- SETUP -----------
 missing_subjects = [1, 9, 35];
 total_subjects = 47;
@@ -84,18 +83,6 @@ num_predictors = size(X_combined,2);
 X_reg = [ones(size(X_combined,1),1), X_combined, head_norm];
 [b,~,~,~,stats] = regress(y_clean, X_reg);
 
-n = size(X_reg,1);
-p = size(X_reg,2);
-df = n - p;
-
-y_pred = X_reg * b;
-residuals = y_clean - y_pred;
-sigma2 = sum(residuals.^2) / df;
-XTX_inv = inv(X_reg' * X_reg);
-se = sqrt(diag(sigma2 * XTX_inv));
-t_stats = b ./ se;
-p_uncorrected = 2 * (1 - tcdf(abs(t_stats), df));
-
 % ----------- PERMUTATION TEST -----------
 num_permutations = 10000;
 perm_betas = zeros(num_permutations, num_predictors);
@@ -113,11 +100,10 @@ for g = 1:num_predictors
     p_perm_uncorrected(g) = mean(abs(perm_betas(:, g)) >= abs(observed_betas(g)));
 end
 
-% ----------- HOLM-BONFERRONI CORRECTION -----------
+% Holm-Bonferroni correction
 [p_sorted, sort_idx] = sort(p_perm_uncorrected);
 holm_p = zeros(size(p_perm_uncorrected));
 m = num_predictors;
-
 for k = 1:m
     holm_p(k) = min(1, (m - k + 1) * p_sorted(k));
 end
@@ -129,30 +115,6 @@ end
 p_perm_holm = zeros(size(p_perm_uncorrected));
 p_perm_holm(sort_idx) = holm_p;
 
-% ----------- PREPARE NAMES -----------
-pretty_names = containers.Map();
-for g = 1:num_groups
-    name = group_names{g};
-    capitalized_name = [upper(name(1)), name(2:end)];
-    pretty_names([name '_task1']) = [capitalized_name ' Task1'];
-    pretty_names([name '_task2']) = [capitalized_name ' Task2'];
-end
-
-% ----------- PRINT REGRESSION RESULTS -----------
-fprintf('--- Combined Task1 & Task2 Regression Results ---\n');
-fprintf('Intercept: %.4f\n', b(1));
-for g = 1:num_predictors
-    if g <= num_groups
-        key = [group_names{g} '_task1'];
-    else
-        key = [group_names{g - num_groups} '_task2'];
-    end
-    fprintf('%s beta: %.4f, Holm-Bonferroni corrected p: %.4f\n', ...
-        pretty_names(key), b(g+1), p_perm_holm(g));
-end
-fprintf('Head motion beta: %.4f, uncorrected p: %.4f\n', b(end), p_uncorrected(end));
-fprintf('R²=%.4f, F-stat=%.4f, overall p=%.4f\n', stats(1), stats(2), stats(3));
-
 % ----------- PARTIAL CORRELATIONS (Pearson & Spearman) -----------
 pearson_partial = zeros(num_predictors,1);
 spearman_partial = zeros(num_predictors,1);
@@ -162,45 +124,78 @@ for g = 1:num_predictors
     X_ctrl = [X_combined(:, ctrl_vars), head_norm];
     X_ctrl_aug = [ones(size(X_ctrl,1),1), X_ctrl];
 
-    % Residualize predictor and outcome
     beta_x = X_ctrl_aug \ X_combined(:, g);
     beta_y = X_ctrl_aug \ y_clean;
     resid_x = X_combined(:, g) - X_ctrl_aug * beta_x;
     resid_y = y_clean - X_ctrl_aug * beta_y;
 
-    % Pearson partial correlation
     pearson_partial(g) = corr(resid_x, resid_y, 'Type', 'Pearson');
-
-    % Spearman partial correlation
     spearman_partial(g) = corr(resid_x, resid_y, 'Type', 'Spearman');
 end
 
-% ----------- P-VALUES FOR PARTIAL CORRELATIONS (Pearson) -----------
+% ----------- P-VALUES FOR PEARSON PARTIAL CORRELATIONS -----------
 n_obs = size(X_combined,1);
-p_partial = zeros(num_predictors,1);
+p_pearson = zeros(num_predictors,1);
 
 for g = 1:num_predictors
     r = pearson_partial(g);
     df_corr = n_obs - (num_predictors - 1) - 2;
     t_stat = r * sqrt(df_corr / (1 - r^2));
-    p_partial(g) = 2 * (1 - tcdf(abs(t_stat), df_corr));
+    p_pearson(g) = 2 * (1 - tcdf(abs(t_stat), df_corr));
+end
+
+% ----------- P-VALUES FOR SPEARMAN PARTIAL CORRELATIONS (Permutation) -----------
+num_perm_spear = 5000;
+p_spearman = zeros(num_predictors,1);
+
+for g = 1:num_predictors
+    ctrl_vars = setdiff(1:num_predictors, g);
+    X_ctrl = [X_combined(:, ctrl_vars), head_norm];
+    X_ctrl_aug = [ones(size(X_ctrl,1),1), X_ctrl];
+
+    beta_x = X_ctrl_aug \ X_combined(:, g);
+    beta_y = X_ctrl_aug \ y_clean;
+    resid_x = X_combined(:, g) - X_ctrl_aug * beta_x;
+    resid_y = y_clean - X_ctrl_aug * beta_y;
+
+    r_obs = corr(resid_x, resid_y, 'Type','Spearman');
+
+    r_perm = zeros(num_perm_spear,1);
+    for p_idx = 1:num_perm_spear
+        resid_y_perm = resid_y(randperm(length(resid_y)));
+        r_perm(p_idx) = corr(resid_x, resid_y_perm, 'Type','Spearman');
+    end
+    p_spearman(g) = mean(abs(r_perm) >= abs(r_obs));
 end
 
 % Holm-Bonferroni correction
-[p_sorted, sort_idx] = sort(p_partial);
-holm_p_partial = zeros(size(p_partial));
+[p_sorted, sort_idx] = sort(p_pearson);
+holm_p_pearson = zeros(size(p_pearson));
 for k = 1:num_predictors
-    holm_p_partial(k) = min(1, (num_predictors - k + 1) * p_sorted(k));
+    holm_p_pearson(k) = min(1, (num_predictors - k + 1) * p_sorted(k));
 end
 for k = 2:num_predictors
-    if holm_p_partial(k) < holm_p_partial(k-1)
-        holm_p_partial(k) = holm_p_partial(k-1);
+    if holm_p_pearson(k) < holm_p_pearson(k-1)
+        holm_p_pearson(k) = holm_p_pearson(k-1);
     end
 end
-p_partial_holm = zeros(size(p_partial));
-p_partial_holm(sort_idx) = holm_p_partial;
+p_pearson_holm = zeros(size(p_pearson));
+p_pearson_holm(sort_idx) = holm_p_pearson;
 
-% ----------- DISPLAY PARTIAL CORRELATION RESULTS -----------
+[p_sorted, sort_idx] = sort(p_spearman);
+holm_p_spearman = zeros(size(p_spearman));
+for k = 1:num_predictors
+    holm_p_spearman(k) = min(1, (num_predictors - k + 1) * p_sorted(k));
+end
+for k = 2:num_predictors
+    if holm_p_spearman(k) < holm_p_spearman(k-1)
+        holm_p_spearman(k) = holm_p_spearman(k-1);
+    end
+end
+p_spearman_holm = zeros(size(p_spearman));
+p_spearman_holm(sort_idx) = holm_p_spearman;
+
+% ----------- DISPLAY TABLE -----------
 partial_corr_results = table();
 for g = 1:num_predictors
     if g <= num_groups
@@ -213,12 +208,13 @@ for g = 1:num_predictors
     partial_corr_results.ROI{g} = roi_name;
     partial_corr_results.Task{g} = task;
     partial_corr_results.PearsonPartialR(g) = pearson_partial(g);
+    partial_corr_results.PearsonP(g) = p_pearson(g);
+    partial_corr_results.PearsonP_Holm(g) = p_pearson_holm(g);
     partial_corr_results.SpearmanPartialR(g) = spearman_partial(g);
-    partial_corr_results.P_Pearson(g) = p_partial(g);
-    partial_corr_results.P_Holm(g) = p_partial_holm(g);
+    partial_corr_results.SpearmanP(g) = p_spearman(g);
+    partial_corr_results.SpearmanP_Holm(g) = p_spearman_holm(g);
 end
+
 disp('--- Partial Correlations (Pearson & Spearman) with Holm-corrected p-values ---');
 disp(partial_corr_results);
 
-% ----------- OPTIONAL: SAVE RESULTS -----------
-% writetable(partial_corr_results, 'partial_correlation_results.csv');
