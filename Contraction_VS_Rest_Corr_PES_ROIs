@@ -1,7 +1,7 @@
 %% ========================================================================
 %                    ROI–PES CORRELATION ANALYSIS PIPELINE
 %                 Publication-quality version (non-overlapping bars)
-%             
+%                  
 % ========================================================================
 
 %% ----------- SETUP -----------
@@ -27,23 +27,46 @@ bold_task1_rest        = nan(num_subjects, num_groups);
 bold_task2_contraction = nan(num_subjects, num_groups);
 bold_task2_rest        = nan(num_subjects, num_groups);
 
-%% ----------- PARAMETERS FOR BLOCK DESIGN -----------
-total_time_points = 184;  
-contraction_length = 6;   
-rest_length = 10;         
-num_contractions = 6;
+%% ----------- PARAMETERS FOR BLOCK DESIGN (UPDATED) -----------
+total_time_points   = 184;  % total TRs in the BOLD sequence
 
-% Logical indexing for contraction and rest blocks
+prep_rest_TRs       = 3;    % 17 s preparation rest (3 TRs)
+contraction_TRs     = 3;    % each contraction block lasts 3 TRs (~15 s)
+interblock_rest_TRs = 3;    % rest between contractions
+num_contractions    = 12;   % total contraction periods
+
+% Initialize logical arrays
 is_contraction = false(total_time_points, 1);
-start_tp = 1;
+is_rest        = true(total_time_points, 1);
+
+% Start after the preparation rest
+start_tp = prep_rest_TRs + 1;
+
 for c = 1:num_contractions
-    rest_range = start_tp : min(start_tp + rest_length - 1, total_time_points);
-    contraction_start = start_tp + rest_length;
-    contraction_range = contraction_start : min(contraction_start + contraction_length - 1, total_time_points);
+    % Mark contraction TRs
+    contraction_range = start_tp : min(start_tp + contraction_TRs - 1, total_time_points);
     is_contraction(contraction_range) = true;
-    start_tp = contraction_start + contraction_length;
+    
+    % Next contraction starts after the interblock rest
+    start_tp = contraction_range(end) + interblock_rest_TRs + 1;
+    
+    if start_tp > total_time_points
+        break; % stop if we run out of TRs
+    end
 end
+
+% Rest is everything not contraction
 is_rest = ~is_contraction;
+
+% --- Check design summary ---
+fprintf('\n--- BLOCK DESIGN SUMMARY ---\n');
+fprintf('Total TRs: %d\n', total_time_points);
+fprintf('Preparation rest: %d TRs\n', prep_rest_TRs);
+fprintf('Contraction blocks: %d × %d TRs\n', num_contractions, contraction_TRs);
+fprintf('Interblock rests: %d TRs\n', interblock_rest_TRs);
+fprintf('Total contraction TRs: %d\n', sum(is_contraction));
+fprintf('Total rest TRs: %d\n', sum(is_rest));
+fprintf('Check: %d TRs accounted for\n\n', sum(is_contraction) + sum(is_rest));
 
 %% ----------- LOAD DATA AND CALCULATE CLEAN MEANS -----------
 subject_idx = 0;
@@ -105,7 +128,6 @@ for subj = 1:total_subjects
 end
 
 %% ----------- INVERT SIGN OF ROI VALUES -----------
-% (So that brain–behavior correlations are inverted in sign)
 bold_task1_contraction = -bold_task1_contraction;
 bold_task1_rest        = -bold_task1_rest;
 bold_task2_contraction = -bold_task2_contraction;
@@ -199,7 +221,6 @@ colors = [
     0.82 0.29 0.29;  % Task2 Contraction
     0.95 0.64 0.64]; % Task2 Rest
 
-% Create grouped bar plot (non-overlapping)
 b = bar(r_all, 'grouped'); 
 for k = 1:num_conditions
     b(k).FaceColor = colors(k,:);
@@ -207,15 +228,13 @@ for k = 1:num_conditions
     b(k).FaceAlpha = 0.9;
 end
 
-% --- Add significance markers ---
 yl = ylim;
-y_offset = 0.08 * range(yl);  % vertical spacing above bars
+y_offset = 0.08 * range(yl);
 for g = 1:num_groups
     for c = 1:num_conditions
         if ~isnan(p_all(g,c)) && p_all(g,c) < 0.05
             x = b(c).XData(g) + b(c).XOffset;
             y = r_all(g,c);
-            % Place asterisk clearly above the bar, not touching it
             text(x, y + y_offset*sign(y + eps), '*', ...
                 'HorizontalAlignment', 'center', ...
                 'VerticalAlignment', 'bottom', ...
@@ -225,7 +244,6 @@ for g = 1:num_groups
     end
 end
 
-% --- Aesthetic tuning ---
 xticks(1:num_groups);
 xticklabels(group_names);
 ylabel('Correlation (r) with PES', 'FontSize', 14);
@@ -236,8 +254,6 @@ set(gca,'FontSize',13,'LineWidth',1.2,'Box','off');
 grid on;
 ylim([-1 1]);
 
-% --- Export high-resolution version ---
 set(gcf,'PaperPositionMode','auto');
 print('ROI_PES_correlations_publication_inverted','-dpng','-r600');
-
 fprintf('\n✓ Publication-quality figure saved: ROI_PES_correlations_publication_inverted.png\n');
