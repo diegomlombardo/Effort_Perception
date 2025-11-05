@@ -320,3 +320,26 @@ for g = 1:num_groups
     grid off;
     hold off;
 end
+
+Results
+
+Removed 1 outliers
+--- Regression Results (Task 1) ---
+Intercept: 1.8023
+premotor beta: -0.0515, Holm-Bonferroni corrected p: 1.0000 
+supplementary beta: -0.1381, Holm-Bonferroni corrected p: 1.0000 
+sensory beta: 0.1561, Holm-Bonferroni corrected p: 1.0000 
+cingulate beta: -0.0843, Holm-Bonferroni corrected p: 1.0000 
+insula beta: 0.3670, Holm-Bonferroni corrected p: 1.0000 
+dlPFC beta: -0.2529, Holm-Bonferroni corrected p: 1.0000 
+Head motion beta: -0.0141, uncorrected p: 0.9752
+R²=0.0394, F-stat=0.2052, overall p=0.9821
+
+--- Partial Correlations (Task 1) ---
+premotor partial rho=-0.039, Holm-Bonferroni p=1.0000 
+supplementary partial rho=0.046, Holm-Bonferroni p=1.0000 
+sensory partial rho=0.017, Holm-Bonferroni p=1.0000 
+cingulate partial rho=0.037, Holm-Bonferroni p=1.0000 
+insula partial rho=0.001, Holm-Bonferroni p=1.0000 
+dlPFC partial rho=-0.130, Holm-Bonferroni p=1.0000 
+Head motion partial rho=0.090, Holm-Bonferroni p=1.0000 
