@@ -425,5 +425,24 @@ for g = 1:num_groups
 end
 
 
+Removed 1 outliers
+--- Regression Results ---
+Intercept: 1.8023
+premotor beta: 0.2240, Holm-Bonferroni corrected p: 1.0000 
+supplementary beta: -0.0879, Holm-Bonferroni corrected p: 1.0000 
+sensory beta: 1.2326, Holm-Bonferroni corrected p: 0.0054 **
+cingulate beta: -1.2230, Holm-Bonferroni corrected p: 0.0080 **
+insula beta: 0.3373, Holm-Bonferroni corrected p: 1.0000 
+dlPFC beta: 0.6106, Holm-Bonferroni corrected p: 0.5744 
+Head motion beta: -0.0449, uncorrected p: 0.8907
+R²=0.4034, F-stat=3.3813, overall p=0.0073
 
+--- Partial Correlations ---
+premotor partial rho=0.279, Holm-Bonferroni p=0.4743 
+supplementary partial rho=-0.077, Holm-Bonferroni p=1.0000 
+sensory partial rho=0.551, Holm-Bonferroni p=0.0029 **
+cingulate partial rho=-0.462, Holm-Bonferroni p=0.0238 **
+insula partial rho=0.108, Holm-Bonferroni p=1.0000 
+dlPFC partial rho=0.234, Holm-Bonferroni p=0.6497 
+Head motion partial rho=0.129, Holm-Bonferroni p=1.0000 
 
