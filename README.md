@@ -18,9 +18,16 @@ This MATLAB script "Force_processing" in Fig S1 processes raw force data collect
 
 Script: "Fig S2" This R script evaluates whether individual differences in BOLD activity within the primary somatosensory cortex (S1), previously associated with perceived effort (PES), could instead be explained by differences in physical force output during the fMRI scanning session. The goal of this analysis is to test whether the observed neural correlates of effort perception are confounded by actual exerted force. The script loads and preprocesses data from Master_Data_Base.xlsx, converting key columns to numeric format and removing outliers beyond three standard deviations. It then performs permutation-based Spearman correlation tests (10,000 iterations) between BOLD activity in S1 (under both control and ischemia conditions) and three force-related measures: force during Task 1, force during Task 2, and maximum voluntary contraction (MVC). P-values from the permutation tests are adjusted using the False Discovery Rate (FDR) method. Finally, the script generates a series of scatter plots showing the relationship between BOLD activity and each force metric, including regression lines and annotations for Spearman’s rho and adjusted significance levels. These visualizations help determine whether neural signals linked to perceived effort are independent of actual force production
 
-The more important scripts that holds the main results are the scripts
+The most important scripts that contain the main results are:
 
-"RegressionModel_INB_Control_together" 
+"RegressionModel_INB_Control_together"
+
+"Model_Control_task"
+
+"Model_Experimental_task"
+
+The first script runs the regression model and partial correlations, and also generates figures for the brain–behavior associations reported in the working manuscript. This includes the ROIs in the same model for both the experimental and control tasks. The last two scripts run the analyses separately for the control and experimental tasks. Regression betas and Spearman’s rho (r) are reported, along with p-values corrected using the Holm–Bonferroni method.
+
 
 Still in progress — I’ll complete it soon. Doing my best as I go!
 
