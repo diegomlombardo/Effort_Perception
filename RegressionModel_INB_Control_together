@@ -1,10 +1,11 @@
 % ----------- SETUP -----------
+
 missing_subjects = [1, 9, 35];
 total_subjects = 47;
 valid_subjects = setdiff(1:total_subjects, missing_subjects);
 num_subjects = length(valid_subjects);
 
-% Define ROI groups including insula and dlPFC (ROIs 4 and 5)
+% Define ROI groups
 roi_groups.premotor      = [7];
 roi_groups.supplementary = [26];
 roi_groups.sensory       = [17];
@@ -15,11 +16,12 @@ roi_groups.dlPFC         = [4, 5];
 group_names = fieldnames(roi_groups);
 num_groups = length(group_names);
 
-% Initialize BOLD data matrices for Control and INB
-bold_control = nan(num_subjects, num_groups);
-bold_inb = nan(num_subjects, num_groups);
+% Initialize BOLD data matrices
+bold_task1 = nan(num_subjects, num_groups);
+bold_task2 = nan(num_subjects, num_groups);
 
 % ----------- LOAD DATA -----------
+
 subject_idx = 0;
 for subj = 1:total_subjects
     if ismember(subj, missing_subjects)
@@ -28,24 +30,23 @@ for subj = 1:total_subjects
     subject_idx = subject_idx + 1;
     subj_str = sprintf('%02d', subj);
 
-    % Load Control data (Task1)
-    file_control = ['ROIs_sub_' subj_str '_task1.mat'];
-    data1 = load(file_control); % loads variable 'bold_data' [time x 48]
+    % Task1 (Control)
+    data1 = load(['ROIs_sub_' subj_str '_task1.mat']); 
     bold1 = data1.bold_data;
 
-    % Load INB data (Task2)
-    file_inb = ['ROIs_sub_' subj_str '_task2.mat'];
-    data2 = load(file_inb); % loads variable 'bold_data' [time x 48]
+    % Task2 (INB %)
+    data2 = load(['ROIs_sub_' subj_str '_task2.mat']); 
     bold2 = data2.bold_data;
 
     for g = 1:num_groups
         roi_indices = roi_groups.(group_names{g});
-        bold_control(subject_idx, g) = mean(mean(bold1(:, roi_indices), 2), 'omitnan');
-        bold_inb(subject_idx, g) = mean(mean(bold2(:, roi_indices), 2), 'omitnan');
+        bold_task1(subject_idx, g) = mean(mean(bold1(:, roi_indices), 2), 'omitnan');
+        bold_task2(subject_idx, g) = mean(mean(bold2(:, roi_indices), 2), 'omitnan');
     end
 end
 
 % ----------- LOAD BEHAVIOR AND HEAD MOTION -----------
+
 if ~exist('pes_totals', 'var') || length(pes_totals) ~= num_subjects
     error('pes_totals must be loaded and match valid subjects count');
 end
@@ -59,58 +60,99 @@ end
 head_motion = head(:, 2);
 
 % ----------- REMOVE OUTLIERS -----------
-threshold = 3;
-outlier_mask = any(abs(bold_control) > threshold, 2) | any(abs(bold_inb) > threshold, 2);
 
-X_control_clean = bold_control(~outlier_mask, :);
-X_inb_clean = bold_inb(~outlier_mask, :);
+threshold = 3;
+outlier_mask = any(abs(bold_task1) > threshold, 2) | any(abs(bold_task2) > threshold, 2);
+
+X_task1_clean = bold_task1(~outlier_mask, :);
+X_task2_clean = bold_task2(~outlier_mask, :);
 y_clean = pes_totals(~outlier_mask);
 head_clean = head_motion(~outlier_mask);
 
 fprintf('Removed %d outliers\n', sum(outlier_mask));
 
 % ----------- NORMALIZE PREDICTORS -----------
-X_control_norm = (X_control_clean - mean(X_control_clean)) ./ std(X_control_clean);
-X_inb_norm = (X_inb_clean - mean(X_inb_clean)) ./ std(X_inb_clean);
+
+X_task1_norm = (X_task1_clean - mean(X_task1_clean)) ./ std(X_task1_clean);
+X_task2_norm = (X_task2_clean - mean(X_task2_clean)) ./ std(X_task2_clean);
 head_norm = (head_clean - mean(head_clean)) ./ std(head_clean);
 head_norm = head_norm(:);
 
-% ----------- COMBINE PREDICTORS -----------
-X_combined = [X_control_norm, X_inb_norm];
-num_predictors = size(X_combined,2);
+% ----------- COMBINE CONTROL and INB % PREDICTORS -----------
 
-% ----------- LINEAR REGRESSION -----------
+X_combined = [X_task1_norm, X_task2_norm];
+num_predictors = num_groups * 2;
+
+% ----------- REGRESSION -----------
+
 X_reg = [ones(size(X_combined,1),1), X_combined, head_norm];
-[b,~,~,~,~] = regress(y_clean, X_reg);
+[b,~,~,~,stats] = regress(y_clean, X_reg);
 
-observed_betas = b(2:(num_predictors+1)); % regression betas only
+n = size(X_reg,1);
+p = size(X_reg,2);
+df = n - p;
+
+y_pred = X_reg * b;
+residuals = y_clean - y_pred;
+sigma2 = sum(residuals.^2) / df;
+XTX_inv = inv(X_reg' * X_reg);
+se = sqrt(diag(sigma2 * XTX_inv));
+t_stats = b ./ se;
+p_values = 2 * (1 - tcdf(abs(t_stats), df));
+
+beta = b(2:(num_predictors+1));
+p_regression = p_values(2:(num_predictors+1));
 
 % ----------- PARTIAL SPEARMAN CORRELATIONS -----------
+
+num_permutations = 10000;
+
 spearman_partial = zeros(num_predictors,1);
-f2_spearman = zeros(num_predictors,1);
-num_permutations = 5000;
+p_spearman = zeros(num_predictors,1);
 
 for g = 1:num_predictors
     x = X_combined(:, g);
     ctrl_idx = setdiff(1:num_predictors, g);
     X_ctrl = [X_combined(:, ctrl_idx), head_norm];
     X_ctrl_aug = [ones(size(X_ctrl,1),1), X_ctrl];
-
-    % Residualize x and y
+    
     beta_x = X_ctrl_aug \ x;
     beta_y = X_ctrl_aug \ y_clean;
     resid_x = x - X_ctrl_aug * beta_x;
     resid_y = y_clean - X_ctrl_aug * beta_y;
-
-    % Spearman partial correlation
-    rho = corr(resid_x, resid_y, 'Type','Spearman');
+    
+    rho = corr(resid_x, resid_y, 'Type', 'Spearman');
     spearman_partial(g) = rho;
-
-    % Effect size (Cohen's f²)
-    f2_spearman(g) = rho^2 / (1 - rho^2);
+    
+    perm_rho = zeros(num_permutations,1);
+    for p_iter = 1:num_permutations
+        resid_y_perm = resid_y(randperm(length(resid_y)));
+        perm_rho(p_iter) = corr(resid_x, resid_y_perm, 'Type', 'Spearman');
+    end
+    % Ensure no zero p-value
+    p_spearman(g) = max(mean(abs(perm_rho) >= abs(rho)), 1/num_permutations);
 end
 
-% ----------- CREATE RESULTS TABLE -----------
+% Holm-Bonferroni correction for Spearman
+[p_sorted, sort_idx] = sort(p_spearman);
+holm_p_spearman = zeros(size(p_spearman));
+m = num_predictors;
+for k = 1:m
+    holm_p_spearman(k) = min(1, (m - k + 1) * p_sorted(k));
+end
+for k = 2:m
+    if holm_p_spearman(k) < holm_p_spearman(k-1)
+        holm_p_spearman(k) = holm_p_spearman(k-1);
+    end
+end
+holm_p_spearman(sort_idx) = holm_p_spearman;
+
+% ----------- SPEARMAN EFFECT SIZE (f²) -----------
+
+f2_spearman = spearman_partial.^2 ./ (1 - spearman_partial.^2);
+
+% ----------- STORE RESULTS IN TABLE -----------
+
 results_table = table();
 for g = 1:num_predictors
     if g <= num_groups
@@ -118,33 +160,36 @@ for g = 1:num_predictors
         task_name = 'Control';
     else
         roi_name = group_names{g - num_groups};
-        task_name = 'INB';
+        task_name = 'INB %';
     end
+    
     results_table.ROI{g} = roi_name;
     results_table.Task{g} = task_name;
-    results_table.Beta(g) = observed_betas(g);
-    results_table.SpearmanR(g) = spearman_partial(g);
+    results_table.Beta(g) = beta(g);
+    results_table.RegressionP(g) = p_regression(g);         % numeric
+    results_table.SpearmanPartialR(g) = spearman_partial(g);
+    results_table.SpearmanP(g) = p_spearman(g);             % numeric
+    results_table.SpearmanP_Holm(g) = holm_p_spearman(g);   % numeric
     results_table.F2_Spearman(g) = f2_spearman(g);
 end
 
-disp('--- Regression Betas and Spearman Partial Correlations with Effect Sizes ---');
+disp('--- Regression Betas, p-values, and Spearman Partial Correlations ---');
 disp(results_table);
 
 
---- Partial Correlations and Effect Sizes for Task1 & Task2 ---
-           ROI             Task       PearsonPartialR     PearsonP     PearsonP_Holm    SpearmanPartialR    SpearmanP    SpearmanP_Holm    F2_Pearson    F2_Spearman
-    _________________    _________    _______________    __________    _____________    ________________    _________    ______________    __________    ___________
+--- Regression Betas, p-values, and Spearman Partial Correlations ---
+           ROI              Task          Beta       RegressionP    SpearmanPartialR    SpearmanP    SpearmanP_Holm    F2_Spearman
+    _________________    ___________    _________    ___________    ________________    _________    ______________    ___________
 
-    {'premotor'     }    {'Task1'}         0.12341          0.43046              1           0.072486        0.6468               1          0.015465     0.0052819 
-    {'supplementary'}    {'Task1'}        0.062932          0.68849              1           0.075808        0.6382               1         0.0039762     0.0057801 
-    {'sensory'      }    {'Task1'}        0.068646          0.66182              1           0.069012        0.6686               1         0.0047346     0.0047855 
-    {'cingulate'    }    {'Task1'}        -0.28729         0.061769        0.55592           -0.18861        0.2293               1          0.089959      0.036887 
-    {'insula'       }    {'Task1'}          0.1268          0.41778              1         -0.0096648        0.9533               1          0.016342    9.3416e-05 
-    {'dlPFC'        }    {'Task1'}         -0.1053          0.50156              1           -0.16672        0.2851               1          0.011213      0.028589 
-    {'premotor'     }    {'Task2'}         0.17507           0.2615              1            0.21806        0.1568               1          0.031618      0.049925 
-    {'supplementary'}    {'Task2'}       0.0028558           0.9855              1          -0.025974        0.8658               1        8.1557e-06    0.00067511 
-    {'sensory'      }    {'Task2'}         0.56915       6.8132e-05     0.00081759            0.62881             0               0           0.47915         0.654 
-    {'cingulate'    }    {'Task2'}        -0.55478       0.00011306      0.0012437           -0.50936        0.0004          0.0044           0.44464       0.35035 
-    {'insula'       }    {'Task2'}         0.23654          0.12672              1            0.18182        0.2393               1          0.059268      0.034188 
-    {'dlPFC'        }    {'Task2'}         0.29573          0.05418         0.5418            0.30097        0.0485           0.485          0.095838      0.099603 
-
+    {'premotor'     }    {'Control'}      0.23862       0.50835          0.072486        0.6516               1         0.0052819 
+    {'supplementary'}    {'Control'}      0.12225       0.73663          0.075808        0.6179               1         0.0057801 
+    {'sensory'      }    {'Control'}      0.16168       0.71367          0.069012        0.6632               1         0.0047855 
+    {'cingulate'    }    {'Control'}     -0.63965        0.1171          -0.18861        0.2211               1          0.036887 
+    {'insula'       }    {'Control'}      0.23876       0.49667        -0.0096648        0.9526               1        9.3416e-05 
+    {'dlPFC'        }    {'Control'}     -0.20692       0.57291          -0.16672        0.2857               1          0.028589 
+    {'premotor'     }    {'INB %'  }      0.38323        0.3462           0.21806        0.1612               1          0.049925 
+    {'supplementary'}    {'INB %'  }    0.0057994       0.98784         -0.025974        0.8721               1        0.00067511 
+    {'sensory'      }    {'INB %'  }       1.3913    0.00083359           0.62881        0.0001          0.0012             0.654 
+    {'cingulate'    }    {'INB %'  }      -1.4136     0.0011994          -0.50936        0.0005          0.0055           0.35035 
+    {'insula'       }    {'INB %'  }      0.46194       0.20014           0.18182        0.2358               1          0.034188 
+    {'dlPFC'        }    {'INB %'  }      0.64712       0.10626           0.30097          0.05             0.5          0.099603 
