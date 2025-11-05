@@ -15,9 +15,9 @@ roi_groups.dlPFC         = [4, 5];
 group_names = fieldnames(roi_groups);
 num_groups = length(group_names);
 
-% Initialize BOLD data matrices for Task 1 and Task 2
-bold_task1 = nan(num_subjects, num_groups);
-bold_task2 = nan(num_subjects, num_groups);
+% Initialize BOLD data matrices for Control and INB
+bold_control = nan(num_subjects, num_groups);
+bold_inb = nan(num_subjects, num_groups);
 
 % ----------- LOAD DATA -----------
 subject_idx = 0;
@@ -28,20 +28,20 @@ for subj = 1:total_subjects
     subject_idx = subject_idx + 1;
     subj_str = sprintf('%02d', subj);
 
-    % Load Task 1 data
-    file_task1 = ['ROIs_sub_' subj_str '_task1.mat'];
-    data1 = load(file_task1); % loads variable 'bold_data' [time x 48]
+    % Load Control data (Task1)
+    file_control = ['ROIs_sub_' subj_str '_task1.mat'];
+    data1 = load(file_control); % loads variable 'bold_data' [time x 48]
     bold1 = data1.bold_data;
 
-    % Load Task 2 data
-    file_task2 = ['ROIs_sub_' subj_str '_task2.mat'];
-    data2 = load(file_task2); % loads variable 'bold_data' [time x 48]
+    % Load INB data (Task2)
+    file_inb = ['ROIs_sub_' subj_str '_task2.mat'];
+    data2 = load(file_inb); % loads variable 'bold_data' [time x 48]
     bold2 = data2.bold_data;
 
     for g = 1:num_groups
         roi_indices = roi_groups.(group_names{g});
-        bold_task1(subject_idx, g) = mean(mean(bold1(:, roi_indices), 2), 'omitnan');
-        bold_task2(subject_idx, g) = mean(mean(bold2(:, roi_indices), 2), 'omitnan');
+        bold_control(subject_idx, g) = mean(mean(bold1(:, roi_indices), 2), 'omitnan');
+        bold_inb(subject_idx, g) = mean(mean(bold2(:, roi_indices), 2), 'omitnan');
     end
 end
 
@@ -60,268 +60,76 @@ head_motion = head(:, 2);
 
 % ----------- REMOVE OUTLIERS -----------
 threshold = 3;
-outlier_mask = any(abs(bold_task1) > threshold, 2) | any(abs(bold_task2) > threshold, 2);
+outlier_mask = any(abs(bold_control) > threshold, 2) | any(abs(bold_inb) > threshold, 2);
 
-X_task1_clean = bold_task1(~outlier_mask, :);
-X_task2_clean = bold_task2(~outlier_mask, :);
+X_control_clean = bold_control(~outlier_mask, :);
+X_inb_clean = bold_inb(~outlier_mask, :);
 y_clean = pes_totals(~outlier_mask);
 head_clean = head_motion(~outlier_mask);
 
 fprintf('Removed %d outliers\n', sum(outlier_mask));
 
 % ----------- NORMALIZE PREDICTORS -----------
-X_task1_norm = (X_task1_clean - mean(X_task1_clean)) ./ std(X_task1_clean);
-X_task2_norm = (X_task2_clean - mean(X_task2_clean)) ./ std(X_task2_clean);
+X_control_norm = (X_control_clean - mean(X_control_clean)) ./ std(X_control_clean);
+X_inb_norm = (X_inb_clean - mean(X_inb_clean)) ./ std(X_inb_clean);
 head_norm = (head_clean - mean(head_clean)) ./ std(head_clean);
 head_norm = head_norm(:);
 
-% ----------- COMBINE TASK1 and TASK2 PREDICTORS -----------
-X_combined = [X_task1_norm, X_task2_norm];
+% ----------- COMBINE PREDICTORS -----------
+X_combined = [X_control_norm, X_inb_norm];
 num_predictors = size(X_combined,2);
 
 % ----------- LINEAR REGRESSION -----------
 X_reg = [ones(size(X_combined,1),1), X_combined, head_norm];
-[b,~,~,~,stats] = regress(y_clean, X_reg);
+[b,~,~,~,~] = regress(y_clean, X_reg);
 
-% ----------- PERMUTATION TEST -----------
-num_permutations = 10000;
-perm_betas = zeros(num_permutations, num_predictors);
+observed_betas = b(2:(num_predictors+1)); % regression betas only
 
-for i = 1:num_permutations
-    y_perm = y_clean(randperm(length(y_clean)));
-    b_perm = regress(y_perm, X_reg);
-    perm_betas(i, :) = b_perm(2:(num_predictors+1))';
-end
-
-observed_betas = b(2:(num_predictors+1));
-p_perm_uncorrected = zeros(1, num_predictors);
-
-for g = 1:num_predictors
-    p_perm_uncorrected(g) = mean(abs(perm_betas(:, g)) >= abs(observed_betas(g)));
-end
-
-% Holm-Bonferroni correction
-[p_sorted, sort_idx] = sort(p_perm_uncorrected);
-holm_p = zeros(size(p_perm_uncorrected));
-m = num_predictors;
-for k = 1:m
-    holm_p(k) = min(1, (m - k + 1) * p_sorted(k));
-end
-for k = 2:m
-    if holm_p(k) < holm_p(k-1)
-        holm_p(k) = holm_p(k-1);
-    end
-end
-p_perm_holm = zeros(size(p_perm_uncorrected));
-p_perm_holm(sort_idx) = holm_p;
-
-% ----------- PARTIAL CORRELATIONS (Pearson & Spearman) -----------
-pearson_partial = zeros(num_predictors,1);
+% ----------- PARTIAL SPEARMAN CORRELATIONS -----------
 spearman_partial = zeros(num_predictors,1);
+f2_spearman = zeros(num_predictors,1);
+num_permutations = 5000;
 
 for g = 1:num_predictors
-    ctrl_vars = setdiff(1:num_predictors, g);
-    X_ctrl = [X_combined(:, ctrl_vars), head_norm];
-    X_ctrl_aug = [ones(size(X_ctrl,1),1), X_ctrl];
-
-    beta_x = X_ctrl_aug \ X_combined(:, g);
-    beta_y = X_ctrl_aug \ y_clean;
-    resid_x = X_combined(:, g) - X_ctrl_aug * beta_x;
-    resid_y = y_clean - X_ctrl_aug * beta_y;
-
-    pearson_partial(g) = corr(resid_x, resid_y, 'Type', 'Pearson');
-    spearman_partial(g) = corr(resid_x, resid_y, 'Type', 'Spearman');
-end
-
-% ----------- P-VALUES FOR PEARSON PARTIAL CORRELATIONS -----------
-n_obs = size(X_combined,1);
-p_pearson = zeros(num_predictors,1);
-
-for g = 1:num_predictors
-    r = pearson_partial(g);
-    df_corr = n_obs - (num_predictors - 1) - 2;
-    t_stat = r * sqrt(df_corr / (1 - r^2));
-    p_pearson(g) = 2 * (1 - tcdf(abs(t_stat), df_corr));
-end
-
-% ----------- P-VALUES FOR SPEARMAN PARTIAL CORRELATIONS (Permutation) -----------
-num_perm_spear = 5000;
-p_spearman = zeros(num_predictors,1);
-
-for g = 1:num_predictors
-    ctrl_vars = setdiff(1:num_predictors, g);
-    X_ctrl = [X_combined(:, ctrl_vars), head_norm];
-    X_ctrl_aug = [ones(size(X_ctrl,1),1), X_ctrl];
-
-    beta_x = X_ctrl_aug \ X_combined(:, g);
-    beta_y = X_ctrl_aug \ y_clean;
-    resid_x = X_combined(:, g) - X_ctrl_aug * beta_x;
-    resid_y = y_clean - X_ctrl_aug * beta_y;
-
-    r_obs = corr(resid_x, resid_y, 'Type','Spearman');
-
-    r_perm = zeros(num_perm_spear,1);
-    for p_idx = 1:num_perm_spear
-        resid_y_perm = resid_y(randperm(length(resid_y)));
-        r_perm(p_idx) = corr(resid_x, resid_y_perm, 'Type','Spearman');
-    end
-    p_spearman(g) = mean(abs(r_perm) >= abs(r_obs));
-end
-
-% Holm-Bonferroni correction
-[p_sorted, sort_idx] = sort(p_pearson);
-holm_p_pearson = zeros(size(p_pearson));
-for k = 1:num_predictors
-    holm_p_pearson(k) = min(1, (num_predictors - k + 1) * p_sorted(k));
-end
-for k = 2:num_predictors
-    if holm_p_pearson(k) < holm_p_pearson(k-1)
-        holm_p_pearson(k) = holm_p_pearson(k-1);
-    end
-end
-p_pearson_holm = zeros(size(p_pearson));
-p_pearson_holm(sort_idx) = holm_p_pearson;
-
-[p_sorted, sort_idx] = sort(p_spearman);
-holm_p_spearman = zeros(size(p_spearman));
-for k = 1:num_predictors
-    holm_p_spearman(k) = min(1, (num_predictors - k + 1) * p_sorted(k));
-end
-for k = 2:num_predictors
-    if holm_p_spearman(k) < holm_p_spearman(k-1)
-        holm_p_spearman(k) = holm_p_spearman(k-1);
-    end
-end
-p_spearman_holm = zeros(size(p_spearman));
-p_spearman_holm(sort_idx) = holm_p_spearman;
-
-% ----------- DISPLAY TABLE -----------
-partial_corr_results = table();
-for g = 1:num_predictors
-    if g <= num_groups
-        roi_name = group_names{g};
-        task = 'Task1';
-    else
-        roi_name = group_names{g - num_groups};
-        task = 'Task2';
-    end
-    partial_corr_results.ROI{g} = roi_name;
-    partial_corr_results.Task{g} = task;
-    partial_corr_results.PearsonPartialR(g) = pearson_partial(g);
-    partial_corr_results.PearsonP(g) = p_pearson(g);
-    partial_corr_results.PearsonP_Holm(g) = p_pearson_holm(g);
-    partial_corr_results.SpearmanPartialR(g) = spearman_partial(g);
-    partial_corr_results.SpearmanP(g) = p_spearman(g);
-    partial_corr_results.SpearmanP_Holm(g) = p_spearman_holm(g);
-end
-
-disp('--- Partial Correlations (Pearson & Spearman) with Holm-corrected p-values ---');
-disp(partial_corr_results);
-
-% ----------- PARTIAL CORRELATIONS AND EFFECT SIZES -----------
-
-num_predictors = num_groups * 2; % Task1 + Task2
-pearson_partial = zeros(num_predictors,1);
-spearman_partial = zeros(num_predictors,1);
-p_pearson = zeros(num_predictors,1);
-p_spearman = zeros(num_predictors,1);
-
-num_permutations = 10000; % for Spearman p-values
-
-for g = 1:num_predictors
-    % Determine which variable to test
     x = X_combined(:, g);
-    
-    % Control variables: all other ROIs + head motion
     ctrl_idx = setdiff(1:num_predictors, g);
     X_ctrl = [X_combined(:, ctrl_idx), head_norm];
     X_ctrl_aug = [ones(size(X_ctrl,1),1), X_ctrl];
-    
+
     % Residualize x and y
     beta_x = X_ctrl_aug \ x;
     beta_y = X_ctrl_aug \ y_clean;
     resid_x = x - X_ctrl_aug * beta_x;
     resid_y = y_clean - X_ctrl_aug * beta_y;
-    
-    % --- Pearson partial correlation ---
-    r_pearson = corr(resid_x, resid_y, 'Type', 'Pearson');
-    pearson_partial(g) = r_pearson;
-    
-    t_val = r_pearson * sqrt((length(resid_x)-2)/(1-r_pearson^2));
-    p_pearson(g) = 2*(1 - tcdf(abs(t_val), length(resid_x)-2));
-    
-    % --- Spearman partial correlation (permutation) ---
-    rho = corr(resid_x, resid_y, 'Type', 'Spearman');
+
+    % Spearman partial correlation
+    rho = corr(resid_x, resid_y, 'Type','Spearman');
     spearman_partial(g) = rho;
-    
-    perm_rho = zeros(num_permutations,1);
-    for p = 1:num_permutations
-        resid_y_perm = resid_y(randperm(length(resid_y)));
-        perm_rho(p) = corr(resid_x, resid_y_perm, 'Type', 'Spearman');
-    end
-    p_spearman(g) = mean(abs(perm_rho) >= abs(rho));
+
+    % Effect size (Cohen's f²)
+    f2_spearman(g) = rho^2 / (1 - rho^2);
 end
 
-% ----------- HOLM-BONFERRONI CORRECTION -----------
-
-% Pearson
-[p_sorted, sort_idx] = sort(p_pearson);
-m = length(p_pearson);
-holm_p_pearson = zeros(size(p_pearson));
-for k = 1:m
-    holm_p_pearson(k) = min(1, (m - k + 1) * p_sorted(k));
-end
-for k = 2:m
-    if holm_p_pearson(k) < holm_p_pearson(k-1)
-        holm_p_pearson(k) = holm_p_pearson(k-1);
-    end
-end
-holm_p_pearson(sort_idx) = holm_p_pearson;
-
-% Spearman
-[p_sorted, sort_idx] = sort(p_spearman);
-holm_p_spearman = zeros(size(p_spearman));
-for k = 1:m
-    holm_p_spearman(k) = min(1, (m - k + 1) * p_sorted(k));
-end
-for k = 2:m
-    if holm_p_spearman(k) < holm_p_spearman(k-1)
-        holm_p_spearman(k) = holm_p_spearman(k-1);
-    end
-end
-holm_p_spearman(sort_idx) = holm_p_spearman;
-
-% ----------- EFFECT SIZES (Cohen's f²) -----------
-
-f2_pearson = pearson_partial.^2 ./ (1 - pearson_partial.^2);
-f2_spearman = spearman_partial.^2 ./ (1 - spearman_partial.^2);
-
-% ----------- STORE RESULTS IN TABLE -----------
-
-partial_corr_results = table();
+% ----------- CREATE RESULTS TABLE -----------
+results_table = table();
 for g = 1:num_predictors
     if g <= num_groups
         roi_name = group_names{g};
-        task_name = 'Task1';
+        task_name = 'Control';
     else
         roi_name = group_names{g - num_groups};
-        task_name = 'Task2';
+        task_name = 'INB';
     end
-    
-    partial_corr_results.ROI{g} = roi_name;
-    partial_corr_results.Task{g} = task_name;
-    partial_corr_results.PearsonPartialR(g) = pearson_partial(g);
-    partial_corr_results.PearsonP(g) = p_pearson(g);
-    partial_corr_results.PearsonP_Holm(g) = holm_p_pearson(g);
-    partial_corr_results.SpearmanPartialR(g) = spearman_partial(g);
-    partial_corr_results.SpearmanP(g) = p_spearman(g);
-    partial_corr_results.SpearmanP_Holm(g) = holm_p_spearman(g);
-    partial_corr_results.F2_Pearson(g) = f2_pearson(g);
-    partial_corr_results.F2_Spearman(g) = f2_spearman(g);
+    results_table.ROI{g} = roi_name;
+    results_table.Task{g} = task_name;
+    results_table.Beta(g) = observed_betas(g);
+    results_table.SpearmanR(g) = spearman_partial(g);
+    results_table.F2_Spearman(g) = f2_spearman(g);
 end
 
-disp('--- Partial Correlations and Effect Sizes for Task1 & Task2 ---');
-disp(partial_corr_results);
+disp('--- Regression Betas and Spearman Partial Correlations with Effect Sizes ---');
+disp(results_table);
+
 
 --- Partial Correlations and Effect Sizes for Task1 & Task2 ---
            ROI             Task       PearsonPartialR     PearsonP     PearsonP_Holm    SpearmanPartialR    SpearmanP    SpearmanP_Holm    F2_Pearson    F2_Spearman
