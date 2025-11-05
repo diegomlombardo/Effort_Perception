@@ -193,3 +193,49 @@ disp(results_table);
     {'cingulate'    }    {'INB %'  }      -1.4136     0.0011994          -0.50936        0.0005          0.0055           0.35035 
     {'insula'       }    {'INB %'  }      0.46194       0.20014           0.18182        0.2358               1          0.034188 
     {'dlPFC'        }    {'INB %'  }      0.64712       0.10626           0.30097          0.05             0.5          0.099603 
+
+
+## Then we have a R part of the code ##
+
+# -------------------- Libraries --------------------
+library(officer)   # For Word documents
+library(flextable) # For nice tables
+
+# -------------------- Create the data frame --------------------
+results <- data.frame(
+  ROI = c("premotor", "supplementary", "sensory", "cingulate", "insula", "dlPFC",
+          "premotor", "supplementary", "sensory", "cingulate", "insula", "dlPFC"),
+  Task = c(rep("Control", 6), rep("INB %", 6)),
+  Beta = c(0.23862, 0.12225, 0.16168, -0.63965, 0.23876, -0.20692,
+           0.38323, 0.0057994, 1.3913, -1.4136, 0.46194, 0.64712),
+  RegressionP = c(0.50835, 0.73663, 0.71367, 0.1171, 0.49667, 0.57291,
+                  0.3462, 0.98784, 0.00083359, 0.0011994, 0.20014, 0.10626),
+  SpearmanPartialR = c(0.072486, 0.075808, 0.069012, -0.18861, -0.0096648, -0.16672,
+                       0.21806, -0.025974, 0.62881, -0.50936, 0.18182, 0.30097),
+  SpearmanP = c(0.6516, 0.6179, 0.6632, 0.2211, 0.9526, 0.2857,
+                0.1612, 0.8721, 0.0001, 0.0005, 0.2358, 0.05),
+  SpearmanP_Holm = c(1,1,1,1,1,1,1,1,0.0012,0.0055,1,0.5),
+  F2_Spearman = c(0.0052819, 0.0057801, 0.0047855, 0.036887, 9.3416e-05, 0.028589,
+                   0.049925, 0.00067511, 0.654, 0.35035, 0.034188, 0.099603)
+)
+
+# -------------------- Format numeric columns --------------------
+# Use scientific notation for very small numbers and 3 decimal places otherwise
+num_cols <- c("Beta", "RegressionP", "SpearmanPartialR", "SpearmanP", "SpearmanP_Holm", "F2_Spearman")
+
+results[num_cols] <- lapply(results[num_cols], function(x) {
+  ifelse(abs(x) < 0.001, formatC(x, format = "e", digits = 2), round(x, 3))
+})
+
+# -------------------- Create flextable --------------------
+ft <- flextable(results)
+ft <- autofit(ft)  # Auto fit column widths
+ft <- theme_booktabs(ft)  # Clean publication theme
+ft <- set_caption(ft, "Regression Betas, p-values, and Spearman Partial Correlations")
+ft <- align(ft, align = "center", part = "all") # Center align all columns
+
+# -------------------- Export to Word --------------------
+doc <- read_docx()
+doc <- body_add_flextable(doc, value = ft)
+print(doc, target = "Regression_Spearman_Table.docx")
+
