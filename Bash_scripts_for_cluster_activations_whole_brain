@@ -106,7 +106,11 @@ done
 echo "All group-level analyses finished." 
 
 
-## Then to have the final cluster profiles in X Y Z coordinates you need this small guy ## 
+## Then to have the final cluster profiles in X Y Z coordinates you need this smal guy ## 
+
+# 1.	Take the t-stat map (--in) and thresholded p-map (--voxthresh) from Step A.
+# 2.	Identify clusters, their size, peak coordinates, and exact p-values.
+
 
 cluster \
   --in=group_ttest_tstat1.nii.gz \
