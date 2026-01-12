@@ -1,0 +1,119 @@
+# This guy do: 1.	It loops through tasks and COPEs, merges subject-level COPEs into a 4D file:
+# 2.	all_copes.nii.gz
+# 3.	It creates a design matrix for a one-sample t-test.
+# 4.	It runs FSL randomise for the group analysis:
+# 5.	RANDOMISE_OUT="${GROUP_DIR}/group_ttest"
+# 6.	randomise -i "$MERGED_COPE" -o "$RANDOMISE_OUT" ...
+# 7.	Randomise outputs include:
+# Output	Description
+# group_ttest_tfce_tstat1.nii.gz	TFCE-corrected t-stat map for contrast 1
+# group_ttest_tfce_corrp_tstat1.nii.gz	TFCE-corrected p-value map
+# group_ttest_tstat1.nii.gz	(Optional) uncorrected t-stat map
+
+
+
+#!/bin/bash
+# =====================================
+# Group Analysis Script (FSL FEAT)
+# Fixed for macOS (zsh / Bash 3)
+# =====================================
+
+DATA_DIR="/Users/diegolombardoisadie20252/Desktop/Experimental-Phase_Effort_Less/data_fMRI"
+TASKS=("Task1" "Task2")
+COPES=("cope1" "cope2","cope3")
+
+# Get list of subjects
+SUBJECTS=($(ls -d ${DATA_DIR}/subject_* | xargs -n 1 basename))
+echo "Found subjects:"
+for subj in "${SUBJECTS[@]}"; do
+    echo " - $subj"
+done
+
+for TASK in "${TASKS[@]}"; do
+    echo "========================================"
+    echo " Processing $TASK"
+    echo "========================================"
+
+    # Convert task name to lowercase safely for .feat folders
+    TASK_LOWER=$(echo "$TASK" | tr '[:upper:]' '[:lower:]')
+
+    for COPE in "${COPES[@]}"; do
+        echo "→ Building 2nd-level model for: $TASK / $COPE"
+
+        VALID_COPE_FILES=()
+
+        # Loop through subjects
+        for SUBJ in "${SUBJECTS[@]}"; do
+            FEAT_DIR="${DATA_DIR}/${SUBJ}/${TASK}/${TASK_LOWER}.feat"
+            COPE_FILE="${FEAT_DIR}/stats/${COPE}.nii.gz"
+
+            if [[ -f "$COPE_FILE" ]]; then
+                # Reorient to standard
+                REORIENTED_FILE="${FEAT_DIR}/stats/${COPE}_reoriented.nii.gz"
+                fslreorient2std "$COPE_FILE" "$REORIENTED_FILE"
+                VALID_COPE_FILES+=("$REORIENTED_FILE")
+            else
+                echo "⚠️ Missing COPE: $COPE_FILE"
+            fi
+        done
+
+        if [[ ${#VALID_COPE_FILES[@]} -eq 0 ]]; then
+            echo "❌ No valid COPEs found for $TASK / $COPE. Skipping."
+            continue
+        fi
+
+        echo "✅ Found ${#VALID_COPE_FILES[@]} valid COPEs for $TASK / $COPE"
+
+        # Create group directory
+        GROUP_DIR="${DATA_DIR}/group_analysis/${TASK}/${COPE}"
+        mkdir -p "$GROUP_DIR"
+
+        # Merge into 4D file
+        MERGED_COPE="${GROUP_DIR}/all_copes.nii.gz"
+        fslmerge -t "$MERGED_COPE" "${VALID_COPE_FILES[@]}"
+        echo "Merged ${#VALID_COPE_FILES[@]} reoriented COPEs into $MERGED_COPE"
+
+        # Create design files for one-sample t-test
+        DESIGN_MAT="${GROUP_DIR}/design.mat"
+        DESIGN_CON="${GROUP_DIR}/design.con"
+
+        # Use FSL's Glm GUI or script to generate these; here is a simple example:
+        echo "/NumWaves 1
+/NumPoints ${#VALID_COPE_FILES[@]}
+/Matrix" > "$DESIGN_MAT"
+
+        # Fill design matrix with ones (one-sample t-test)
+        for ((i=0; i<${#VALID_COPE_FILES[@]}; i++)); do
+            echo "1" >> "$DESIGN_MAT"
+        done
+
+        echo "/NumWaves 1
+/NumContrasts 1
+/PPheights 1
+/Matrix
+1" > "$DESIGN_CON"
+
+        # Run group-level one-sample t-test using randomise
+        RANDOMISE_OUT="${GROUP_DIR}/group_ttest"
+        echo "Running randomise for group analysis..."
+        randomise -i "$MERGED_COPE" -o "$RANDOMISE_OUT" -d "$DESIGN_MAT" -t "$DESIGN_CON" -n 5000 -T
+
+        echo "Group analysis complete for $TASK / $COPE"
+        echo "Z-stat maps are in: ${RANDOMISE_OUT}_tfce_tstat1.nii.gz"
+    done
+done
+
+echo "All group-level analyses finished." 
+
+
+## Then to have the final cluster profiles in X Y Z coordinates you need this small guy ## 
+
+cluster \
+  --in=group_ttest_tstat1.nii.gz \
+  --thresh=0 \
+  --voxthresh=group_ttest_tfce_corrp_thresh.nii.gz \
+  --oindex=clusters_index.nii.gz \
+  --osize=clusters_size.txt \
+  --olmax=clusters_peak.txt \
+  --mm \
+  --connectivity=26
