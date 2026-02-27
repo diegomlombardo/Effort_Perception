@@ -30,5 +30,4 @@ The first script runs the regression model and partial correlations, and also ge
 
 Still in progress — I’ll complete it soon. Doing my best as I go!
 
-% Some parts of this codes and scripts were developed with assistance from ChatGPT by OpenAI.
 
