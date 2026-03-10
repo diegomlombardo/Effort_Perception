@@ -1,0 +1,190 @@
+#!/usr/bin/env python
+
+from __future__ import division
+import sys, os, struct, time
+import pygame
+import pygame.gfxdraw
+from pygame.locals import *
+import math, string
+from datetime import datetime
+
+# Initialize pygame
+pygame.display.init()
+pygame.font.init()
+pygame.joystick.init()
+
+# Pygame Stuff
+FPS = 30  # frames per second setting
+fpsClock = pygame.time.Clock()
+
+# set up the window
+DISPLAY_WIDTH = 512
+DISPLAY_HEIGHT = 512
+WINDOW_HEIGHT = DISPLAY_HEIGHT + 40
+WINDOW_WIDTH = DISPLAY_HEIGHT
+
+top_margin = 10
+left_margin = 40
+right_margin = 10
+bottom_margin = 40
+
+window = pygame.Rect(0, 0, 512 + left_margin + right_margin, 512 + top_margin + bottom_margin)
+graph = pygame.Rect(left_margin, top_margin, 512, 512)
+DISPLAYSURF = pygame.display.set_mode((window.width, window.height))
+
+caption = "Gripforce Test"
+pygame.display.set_caption(caption)
+
+RED = (255, 0, 0)
+GREEN = (0, 255, 0)
+BLUE = (0, 0, 255)
+BLACK = (0, 0, 0)
+LIGHTGRAY = (220, 220, 220)
+DARKGRAY = (100, 100, 100)
+WHITE = (255, 255, 255)
+BOUNDARY_COLOR = (150, 50, 50)
+GRID_COLOR = (180, 180, 180)
+
+joysticks = pygame.joystick.get_count()
+if joysticks:
+    print(str(joysticks) + " joystick(s) detected!")
+  
+# Initialize each joystick
+for i in range(joysticks):
+        joystick = pygame.joystick.Joystick(i)
+        joystick.init()
+        name = joystick.get_name()
+        print("Joystick " + str(i) + " name: " + name)
+
+joy_range = {'xmin': 1.0, 'xmax': -1.0, 'ymin': 1.0, 'ymax': -1.0}
+
+def update_range(x, y):
+    x = (x - 512.0) / 512.0
+    y = (y - 512.0) / 512.0
+    changed = False
+    if x < joy_range['xmin']:
+        joy_range['xmin'] = x
+        changed = True
+    if x > joy_range['xmax']:
+        joy_range['xmax'] = x
+        changed = True
+
+    if y < joy_range['ymin']:
+        joy_range['ymin'] = y
+        changed = True
+    if y > joy_range['ymax']:
+        joy_range['ymax'] = y
+        changed = True
+
+    return changed
+
+# Directory where you want to store the data
+data_directory = '/Users/diegolombardoisadie20252/Desktop/Data_Force'
+if not os.path.exists(data_directory):
+    os.makedirs(data_directory)
+
+# Create the TXT file with timestamp in the filename
+timestamp = datetime.now().strftime('%Y-%m-%d_%H-%M-%S')
+txt_filename = os.path.join(data_directory, f"strength_data_{timestamp}.txt")
+
+# Open the TXT file for writing
+def new_func():
+    global running  # To modify the running variable in new_func
+    for event in pygame.event.get():
+        if event.type == QUIT:
+            running = False
+        if event.type == KEYDOWN:
+            if event.unicode == u'q':
+                running = False
+
+# Initialize control flags
+running = True
+CLEAR_SCREEN = False
+NO_TRACE = True
+target_on = False
+hit_count = 0
+
+with open(txt_filename, mode='w') as txt_file:
+
+    running = True
+    clock = pygame.time.Clock()
+
+    class display_mode(object):
+        def __init__(self, axis_labels=[], grid_positions=[], descriptive_text=[]):
+            self.axis_labels = axis_labels
+            self.grid_positions = grid_positions
+            self.descriptive_text = descriptive_text
+
+        def draw_grids(self):
+            # outer box
+            pygame.draw.rect(DISPLAYSURF, DARKGRAY, (graph.left - 1, graph.top - 1, graph.width + 2, graph.height + 2), 1)
+
+            fontObj = pygame.font.SysFont('arial', 10)
+            for g in self.grid_positions:
+                pygame.draw.line(DISPLAYSURF, GRID_COLOR, (int(graph.width * g) + left_margin, graph.top),
+                                 (int(graph.width * g) + left_margin, graph.bottom))
+                pygame.draw.line(DISPLAYSURF, GRID_COLOR, (graph.left, int(graph.height * g) + top_margin),
+                                 (graph.right, int(graph.height * g) + top_margin))
+
+                textSurfaceObj = fontObj.render(str(self.axis_labels[self.grid_positions.index(g)]), True, BLACK, LIGHTGRAY)
+                textRectObj = textSurfaceObj.get_rect()
+                textRectObj.midtop = (graph.width * g + left_margin, graph.height + 2 + top_margin)
+                DISPLAYSURF.blit(textSurfaceObj, textRectObj)
+                textRectObj.midright = (graph.left - 5, graph.top + graph.height * (1 - g))
+                DISPLAYSURF.blit(textSurfaceObj, textRectObj)
+
+            textSurfaceObj = fontObj.render(str(self.descriptive_text), True, BLACK, LIGHTGRAY)
+            textRectObj = textSurfaceObj.get_rect()
+            textRectObj.midtop = (window.centerx, graph.bottom + 15)
+            DISPLAYSURF.blit(textSurfaceObj, textRectObj)
+
+        def display_cursor(self, x, y):
+            t = pygame.time.get_ticks()
+            force_x = (jx + 1.0) / 2.0
+            force_y = (jy + 1.0) / 2.0
+            time_modulo = math.modf(t / 2000.0)[0]
+            jx_scaled = int((time_modulo * graph.width) + graph.left)
+            jy_scaled = int(graph.bottom - (force_y * graph.height) - 1)
+
+            pygame.draw.circle(DISPLAYSURF, BLUE, (jx_scaled, jy_scaled + 2), 3, 0)
+
+            # Print the joystick values on the display, lower right
+            fontObj = pygame.font.SysFont('arial', 14)
+            coords = "  %4.3f  %4.3f  " % (force_x, force_y)
+            textSurfaceObj = fontObj.render(coords, True, BLACK, LIGHTGRAY)
+            textRectObj = textSurfaceObj.get_rect()
+            textRectObj.bottomright = (window.right - 5, window.bottom)
+            DISPLAYSURF.blit(textSurfaceObj, textRectObj)
+
+    unit_mode = display_mode((0.0, 0.2, 0.4, 0.6, 0.8, 1.0), (0.0, 0.2, 0.4, 0.6, 0.8, 1.0), "Signal vs time")
+
+    modes = [unit_mode]
+    mode_counter = 0
+    mode = unit_mode
+
+    while running:
+        if CLEAR_SCREEN:
+            DISPLAYSURF.fill(LIGHTGRAY)
+            mode.draw_grids()
+
+        if joysticks:  # Only get joystick input if a joystick is connected
+            jx = joystick.get_axis(0)
+            jy = joystick.get_axis(1)
+
+            # Get current time
+            current_time = time.time()
+
+            # Write the strength data (force values) to the TXT file
+            force_x = (jx + 1.0) / 2.0
+            force_y = (jy + 1.0) / 2.0
+            txt_file.write(f"{current_time}, {force_x:.4f}, {force_y:.4f}\n")
+
+            mode.display_cursor(jx, jy)
+
+        pygame.display.update()
+        fpsClock.tick(FPS)
+
+        new_func()
+
+    pygame.quit()
+    sys.exit()
