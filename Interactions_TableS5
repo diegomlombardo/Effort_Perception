@@ -1,0 +1,174 @@
+%% ------------------ SETUP ------------------
+
+
+missing_subjects = [1, 9, 35];
+total_subjects   = 47;
+valid_subjects   = setdiff(1:total_subjects, missing_subjects);
+num_subjects     = length(valid_subjects);
+
+roi_groups.premotor      = [7];
+roi_groups.supplementary = [26];
+roi_groups.sensory       = [17];
+roi_groups.cingulate     = [29, 30];
+roi_groups.insula        = [34];
+roi_groups.dlPFC         = [3, 4];
+
+group_names = fieldnames(roi_groups);
+num_groups  = length(group_names);
+
+bold_task1 = nan(num_subjects, num_groups);
+bold_task2 = nan(num_subjects, num_groups);
+
+%% ------------------ LOAD DATA ------------------
+
+subject_idx = 0;
+for subj = 1:total_subjects
+    if ismember(subj, missing_subjects)
+        continue;
+    end
+    
+    subject_idx = subject_idx + 1;
+    subj_str = sprintf('%02d', subj);
+    
+    data1 = load(['ROIs_sub_' subj_str '_task1.mat']);
+    data2 = load(['ROIs_sub_' subj_str '_task2.mat']);
+    
+    bold1 = data1.bold_data;
+    bold2 = data2.bold_data;
+    
+    for g = 1:num_groups
+        idx = roi_groups.(group_names{g});
+        bold_task1(subject_idx,g) = mean(mean(bold1(:,idx),2),'omitnan');
+        bold_task2(subject_idx,g) = mean(mean(bold2(:,idx),2),'omitnan');
+    end
+end
+
+%% ------------------ LOAD BEHAVIOR ------------------
+
+if isrow(pes_totals)
+    pes_totals = pes_totals';
+end
+
+head_motion = head(:,2);
+
+%% ------------------ STACK DATA ------------------
+
+X_all = [bold_task1; bold_task2];
+task  = [zeros(num_subjects,1); ones(num_subjects,1)];
+pes   = [pes_totals; pes_totals];
+head_all = [head_motion; head_motion];
+
+pes = pes(:);
+task = task(:);
+head_all = head_all(:);
+
+%% ------------------ REMOVE OUTLIERS ------------------
+
+threshold = 3;
+outlier_mask = any(abs(X_all) > threshold,2);
+
+X_clean   = X_all(~outlier_mask,:);
+pes_clean = pes(~outlier_mask);
+task_clean= task(~outlier_mask);
+head_clean= head_all(~outlier_mask);
+
+fprintf('Removed %d outliers\n', sum(outlier_mask));
+
+%% ------------------ NORMALIZE ------------------
+
+X_norm = (X_clean - mean(X_clean)) ./ std(X_clean);
+head_norm = (head_clean - mean(head_clean)) ./ std(head_clean);
+
+pes_clean  = pes_clean(:);
+task_clean = task_clean(:);
+head_norm  = head_norm(:);
+
+%% ------------------ DESIGN MATRIX ------------------
+
+X_main = [ones(size(X_norm,1),1), X_norm, task_clean, head_norm];
+X_inter = X_norm .* task_clean;
+X_reg = [X_main, X_inter];
+
+[n, num_cols] = size(X_reg);
+
+%% ------------------ OLS REGRESSION ------------------
+
+b = X_reg \ pes_clean;
+
+y_pred = X_reg * b;
+residuals = pes_clean - y_pred;
+
+df = n - num_cols;
+sigma2 = sum(residuals.^2)/df;
+
+XTX_inv = inv(X_reg' * X_reg);
+se = sqrt(diag(sigma2 * XTX_inv));
+
+t_stats = b ./ se;
+p_uncorrected = 2*(1 - tcdf(abs(t_stats), df));
+
+%% ------------------ PERMUTATION TEST ------------------
+
+num_permutations = 5000;
+perm_betas = zeros(num_permutations, num_cols);
+
+for i = 1:num_permutations
+    y_perm = pes_clean(randperm(length(pes_clean)));
+    b_perm = X_reg \ y_perm;
+    perm_betas(i,:) = b_perm(:)';   % FIXED
+end
+
+p_perm_uncorrected = zeros(1, num_cols);
+for j = 1:num_cols
+    p_perm_uncorrected(j) = mean(abs(perm_betas(:,j)) >= abs(b(j)));
+end
+
+%% ------------------ FDR CORRECTION (Benjamini-Hochberg) ------------------
+
+[p_sorted, sort_idx] = sort(p_perm_uncorrected);
+m = length(p_sorted);
+
+fdr_p = zeros(size(p_sorted));
+
+for k = 1:m
+    fdr_p(k) = p_sorted(k) * m / k;
+end
+
+% enforce monotonicity
+for k = m-1:-1:1
+    fdr_p(k) = min(fdr_p(k), fdr_p(k+1));
+end
+
+fdr_p = min(fdr_p, 1);
+
+p_fdr = zeros(size(p_perm_uncorrected));
+p_fdr(sort_idx) = fdr_p;
+
+%% ------------------ PRINT RESULTS ------------------
+
+fprintf('\n--- INTERACTION MODEL RESULTS (FDR corrected) ---\n');
+
+fprintf('Intercept: %.4f\n', b(1));
+
+for g = 1:num_groups
+    fprintf('%s main beta: %.4f, FDR p=%.4f\n', ...
+        group_names{g}, b(1+g), p_fdr(1+g));
+end
+
+fprintf('Task effect beta: %.4f, FDR p=%.4f\n', ...
+    b(1+num_groups+1), p_fdr(1+num_groups+1));
+
+fprintf('Head motion beta: %.4f, FDR p=%.4f\n', ...
+    b(1+num_groups+2), p_fdr(1+num_groups+2));
+
+start_idx = 1 + num_groups + 2;
+for g = 1:num_groups
+    fprintf('%s × Task beta: %.4f, FDR p=%.4f\n', ...
+        group_names{g}, b(start_idx+g), p_fdr(start_idx+g));
+end
+
+SS_tot = sum((pes_clean - mean(pes_clean)).^2);
+SS_res = sum(residuals.^2);
+R2 = 1 - SS_res/SS_tot;
+
+fprintf('R² = %.4f\n', R2);
