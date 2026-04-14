@@ -1,33 +1,50 @@
-# Neural Signatures of Physical Effort Perception
+Neural Signatures of Physical Effort Perception
 
-This repository contains analysis code for the study:  
-**"Trait-like neural signatures of physical effort perception dissociated from motor execution in humans"**  
-Led by **Diego Lombardo**
+This repository contains the analysis code for the study "Behavioral tendencies toward physical effort shape neural encoding of effort signals in sensory and cingulate cortices"
+Diego-Martin Lombardo, Florian Marchand, Florian Malaussena, Alexandre Krainik, Emilie Cousin, Boris Cheval, Matthieu Boisgontier, Benjamin Pageaux, Aurélien Delphin, Johan Pietras, Florian Monjo
 
-Raw data files (.mat) are available on Zenodo: https://doi.org/10.5281/zenodo.17238287 and are needed to use this scripts along with the PES and head movement data inside of the .mat file in this attached this GitHub "behavioral_fMRIFD_data.mat"
-This repository contains the analysis code for the study titled "Trait-like neural signatures of physical effort perception dissociated from motor execution in humans", led by Diego Lombardo at Savoie Mont-Blanc University. The study explores the relationship between brain activity and perceived effort making focus in potential effects of differrent effort tendencies in brain health. The scripts (Model_Control_task and Model_Experimental_task) load fMRI data from a group of participants, using Perceived Effort Scores (PES) as input. They extract the average BOLD signal from predefined regions of interest (ROIs) and perform linear regression analyses to predict perceived effort while controlling for head motion. The pipeline includes outlier removal, permutation testing to assess statistical significance, and Holm-Bonferroni correction for multiple comparisons. Additionally, the analysis computes partial Spearman correlations to assess the unique contribution of each ROI, controlling for other ROIs and motion artifacts. High-quality visualizations with shaded confidence intervals are generated to illustrate the results. These regression and partial correlation analyses correspond to Figure 1, Figure 2, and Table 1 in the Results section of the manuscript. To use these codes fist has to be uploaded the file " behavioral_fMRIFD_data.mat" containing for 44 subjects framewise displacement in fMRI (head movement) and PES scores form original data bases
+The project investigates how brain activity relates to perceived physical effort and whether stable, trait-like neural signatures can be identified that are independent of motor execution. In particular, the analyses focus on understanding how individual differences in perceived effort (quantified using Perceived Effort Scores, PES) relate to task-based fMRI activity, while carefully controlling for confounding factors such as head motion and actual force production.
 
-This script "Effect_sizes" computes the effect size (Cohen’s f²) for each brain region of interest (ROI) used as a predictor in a multiple linear regression model. The model predicts a behavioral outcome based on BOLD activity from different ROI groups, while controlling for head motion. For each ROI group, the script calculates how much variance in the outcome is uniquely explained by that group, by comparing the R² of the full model (including all predictors) with the R² of a reduced model where that specific ROI group is removed. Head motion is kept in both the full and reduced models to control for confounding effects. The result is a set of f² values that quantify the individual contribution of each ROI group to the model.
+Data availability
 
-This " Table_S1" R script processes a master Excel dataset to prepare and summarize participant data across three physical activity groups: Sedentary, Average, and Sportif. It loads relevant libraries, cleans and converts variables (including PES and MVC) to proper numeric formats, and applies descriptive labels to key behavioral and neuroimaging measures. Finally, it generates a Table 1 summary using the table1 package, presenting group-wise statistics for age, head motion (FD), perceived effort, muscle strength (MVC), and task-based fMRI BOLD responses across several brain regions for both control and ischemia conditions.
+The raw neuroimaging and behavioral data used in this study are publicly available on Zenodo at https://doi.org/10.5281/zenodo.17238287
+. In addition to the Zenodo dataset, this repository also requires the file behavioral_fMRIFD_data.mat, which contains Perceived Effort Scores, framewise displacement (head motion), and behavioral metadata for 44 participants.
 
-This MATLAB script "LOSO_cross_validation" implements a Leave-One-Subject-Out (LOSO) cross-validation procedure to evaluate the predictive power of task-based fMRI ROI activity and head motion metrics in predicting behavioral outcomes (e.g., perceived effort scores). For each subject, the model is trained on the remaining data and used to predict the held-out response, storing predictions and regression coefficients. After cross-validation, the script reports overall performance metrics (Pearson’s r, RMSE), summarizes beta coefficients across folds, and fits a full cohort model with p-values. It also generates publication-quality plots of LOSO predictions and ROI-specific beta trajectories across folds Fig S3.
+General structure of the analysis
 
-This MATLAB script "Force_processing" in Fig S1 processes raw force data collected during MVC and two task conditions (Task 1 and Task 2) for a cohort of subjects. For each condition, it detects local maxima and minima (peaks and troughs) in the force signal, computes the average absolute difference between successive peaks, and derives a mean peak difference per subject. These values are then scaled as a percentage of the subject's MVC, providing normalized force metrics across conditions. The script includes subject exclusion, outlier detection, and a paired t-test to assess whether Task 1 and Task 2 differ significantly in scaled force output. A publication-ready boxplot is generated to visualize within-subject comparisons between task conditions.
+The analysis pipeline combines MATLAB and R scripts to process behavioral and fMRI data, extract ROI-based BOLD signals, and model their relationship with perceived effort. The workflow begins with preprocessing and extraction of region-specific signals, followed by statistical modeling using linear regression frameworks where PES is the primary outcome variable. Head motion is included as a covariate in all relevant models to ensure that results are not driven by movement-related artifacts.
 
-Script: "Fig S2" This R script evaluates whether individual differences in BOLD activity within the primary somatosensory cortex (S1), previously associated with perceived effort (PES), could instead be explained by differences in physical force output during the fMRI scanning session. The goal of this analysis is to test whether the observed neural correlates of effort perception are confounded by actual exerted force. The script loads and preprocesses data from Master_Data_Base.xlsx, converting key columns to numeric format and removing outliers beyond three standard deviations. It then performs permutation-based Spearman correlation tests (10,000 iterations) between BOLD activity in S1 (under both control and ischemia conditions) and three force-related measures: force during Task 1, force during Task 2, and maximum voluntary contraction (MVC). P-values from the permutation tests are adjusted using Holmes-Bonferroni method for mutiple comparisson correcction. Finally, the script generates a series of scatter plots showing the relationship between BOLD activity and each force metric, including regression lines and annotations for Spearman’s rho and adjusted significance levels. These visualizations help determine whether neural signals linked to perceived effort are independent of actual force production
+Across the different scripts, the analyses include multiple regression models, permutation-based significance testing, Holm–Bonferroni correction for multiple comparisons, and partial Spearman correlations to isolate the unique contribution of each brain region while accounting for the influence of other ROIs and motion parameters. The results of these analyses are used to generate the main figures and tables in the manuscript, including Figures 1 and 2 and Table 1.
 
-The most important scripts that contain the main results are:
+Main analysis scripts
 
-"RegressionModel_INB_Control_together"
+The core statistical results of the manuscript are produced by the scripts RegressionModel_INB_Control_together, Model_Control_task, and Model_Experimental_task. The first of these implements the full regression framework, combining ROIs within a unified model and estimating both regression coefficients and partial correlations across experimental conditions. It is also responsible for generating the main brain–behavior association figures reported in the manuscript. The other two scripts apply the same modeling approach separately to the control and experimental tasks, allowing condition-specific effects to be examined. In all cases, statistical significance is assessed using permutation testing and corrected using the Holm–Bonferroni method.
 
-"Model_Control_task"
+Effect size estimation
 
-"Model_Experimental_task"
+The script Effect_sizes quantifies the contribution of each region of interest using Cohen’s f². This is done by comparing the explanatory power of a full regression model, which includes all ROIs and head motion, against reduced models in which each ROI group is removed one at a time. Head motion is always retained in both models to ensure that variance associated with movement does not inflate the contribution of neural predictors. The resulting f² values provide a measure of how strongly each ROI uniquely contributes to explaining variability in perceived effort.
 
-The first script runs the regression model and partial correlations, and also generates figures for the brain–behavior associations reported in the working manuscript. This includes the ROIs in the same model for both the experimental and control tasks. The last two scripts run the analyses separately for the control and experimental tasks. Regression betas and Spearman’s rho (r) are reported, along with p-values corrected using the Holm–Bonferroni method.
+Cross-validation analysis
 
+The LOSO_cross_validation script implements a leave-one-subject-out validation procedure to evaluate how well fMRI-derived predictors generalize across participants. In each iteration, the model is trained on all but one subject and then used to predict the left-out participant’s perceived effort score. The procedure yields estimates of predictive accuracy, including Pearson correlation and root mean squared error, as well as distributions of regression coefficients across folds. These results are used to assess the stability and generalizability of the neural predictors.
 
-Still in progress — I’ll complete it soon. Doing my best as I go!
+Force processing
 
+The Force_processing script handles preprocessing of raw force signals collected during maximal voluntary contraction (MVC) and task conditions. It detects peaks and troughs in the force time series, computes average peak-to-peak differences, and normalizes these values relative to each participant’s MVC. This allows force output to be compared across individuals. The script also includes subject exclusion procedures, outlier detection, and statistical comparison between task conditions using paired t-tests, with results visualized through publication-quality boxplots.
 
+Force–brain relationship control analysis
+
+The Fig S2 script evaluates whether observed relationships between brain activity and perceived effort could instead be explained by differences in actual force production. It does this by testing correlations between BOLD activity in regions such as primary somatosensory cortex and cingulate cortex and multiple force-related measures, including task force and MVC. These relationships are assessed using permutation-based Spearman correlations with 10,000 iterations, and p-values are corrected using Holm–Bonferroni adjustment. The resulting figures visualize whether neural signals related to effort remain significant after accounting for physical force.
+
+Group-level statistics and table generation
+
+The Table_S1 script prepares the dataset for descriptive statistical reporting. It loads a master Excel file, formats behavioral and neuroimaging variables, and assigns participants to groups based on physical activity level (Sedentary, Average, Sportif). It then generates a structured summary table including age, head motion, perceived effort, muscle strength, and ROI-based BOLD measures under both control and experimental conditions.
+
+Summary
+
+Overall, this repository provides a complete and reproducible analysis pipeline linking brain activity to subjective effort perception while rigorously controlling for motor output and motion-related confounds. The combination of regression modeling, cross-validation, and permutation-based statistics ensures robust inference about the neural basis of perceived physical effort.
+
+Author
+
+Diego Lombardo
+Université Savoie Mont-Blanc
