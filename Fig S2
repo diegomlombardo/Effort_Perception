@@ -188,7 +188,4 @@ xlim([0.5 2.5]);
 ylim([-1 1]);
 
 hold off;
-                        xlab_t2, "MVC")
-
-# --- Arrange plots ---
-plot_grid(p1, p2, p3, p4, p5, p6, ncol = 2, align = "hv")
+                     
