@@ -111,11 +111,26 @@ p6 <- make_scatter_plot(data_no_outliers, "t2_ROI_S1", "MVC",
 
 
 #### Now the 3 ways control S1 BOLD activity vs PES controled by force production inside of the scann in both tasks #### 
+#### Partial correlations between S1 and cingulate activity and PES, controlling ###
+###for motor output during fMRI (Task Control and Ischemia), ###
+## with FDR correction and bootstrap confidence intervals###
 
-## Under INB ### 
-
-% ----------- PARTIAL CORRELATION -----------
+% ----------- PARTIAL CORRELATION (Task 2) -----------
 [r, p] = partialcorr(X_clean(:,3:4), y_clean, mean_Task2);
+
+% ----------- FDR CORRECTION (Benjamini–Hochberg) -----------
+[p_sorted, sort_idx] = sort(p);
+m = length(p);
+
+p_fdr = zeros(size(p));
+
+for k = 1:m
+    p_fdr(sort_idx(k)) = min(1, p_sorted(k) * m / k);
+end
+
+for k = m-1:-1:1
+    p_fdr(sort_idx(k)) = min(p_fdr(sort_idx(k)), p_fdr(sort_idx(k+1)));
+end
 
 % ----------- BOOTSTRAP -----------
 nboot = 5000;
@@ -157,16 +172,16 @@ xticks(x);
 xticklabels({'Primary Sensory Cortex','Cingulate Meta-ROI'});
 ylabel('Partial correlation (r)', 'FontSize',14);
 
-title('Brain–behavior relationship (controlled for motor output during the scan)', ...
+title('Brain–behavior relationship (controlled for motor output during the scan, Task 2)', ...
     'FontSize',15,'FontWeight','normal');
 
-% Significance stars
+% ----------- SIGNIFICANCE (FDR) -----------
 for i = 1:2
-    if p(i) < 0.001
+    if p_fdr(i) < 0.001
         stars = '***';
-    elseif p(i) < 0.01
+    elseif p_fdr(i) < 0.01
         stars = '**';
-    elseif p(i) < 0.05
+    elseif p_fdr(i) < 0.05
         stars = '*';
     else
         stars = '';
@@ -177,7 +192,7 @@ for i = 1:2
         'FontSize',16);
 end
 
-% Style (Nature-like)
+% ----------- STYLE -----------
 set(gca, ...
     'FontSize',13, ...
     'LineWidth',1.5, ...
@@ -188,4 +203,95 @@ xlim([0.5 2.5]);
 ylim([-1 1]);
 
 hold off;
-                     
+
+### Now for the Control motor output Task:  #### 
+
+% ----------- PARTIAL CORRELATION (Task 1) -----------
+[r, p] = partialcorr(X_clean(:,3:4), y_clean, mean_Task1);
+
+% ----------- FDR CORRECTION (Benjamini-Hochberg) -----------
+[p_sorted, sort_idx] = sort(p);
+m = length(p);
+
+p_fdr = zeros(size(p));
+
+for k = 1:m
+    p_fdr(sort_idx(k)) = min(1, p_sorted(k) * m / k);
+end
+
+for k = m-1:-1:1
+    p_fdr(sort_idx(k)) = min(p_fdr(sort_idx(k)), p_fdr(sort_idx(k+1)));
+end
+
+% ----------- BOOTSTRAP -----------
+nboot = 5000;
+boot_r = zeros(nboot, 2);
+
+for b = 1:nboot
+    idx = randi(length(y_clean), length(y_clean), 1);
+
+    Xb = X_clean(idx,3:4);
+    yb = y_clean(idx);
+    zb = mean_Task1(idx);
+
+    boot_r(b,:) = partialcorr(Xb, yb, zb);
+end
+
+ci_low = prctile(boot_r, 2.5);
+ci_high = prctile(boot_r, 97.5);
+
+% ----------- FIGURE -----------
+figure('Color','w','Position',[300 300 600 500]); hold on;
+
+x = [1 2];
+
+% Error bars (CI)
+errorbar(x, r, r - ci_low, ci_high - r, ...
+    'LineStyle','none', ...
+    'Color','k', ...
+    'LineWidth',2, ...
+    'CapSize',12);
+
+% Points
+scatter(x, r, 120, 'k', 'filled');
+
+% Zero reference line
+yline(0,'--','Color',[0.5 0.5 0.5],'LineWidth',1.5);
+
+% Labels
+xticks(x);
+xticklabels({'Primary Sensory Cortex','Cingulate Meta-ROI'});
+ylabel('Partial correlation (r)', 'FontSize',14);
+
+title('Brain–behavior relationship (controlled for motor output during the scan, Task 1)', ...
+    'FontSize',15,'FontWeight','normal');
+
+% ----------- SIGNIFICANCE (FDR) -----------
+for i = 1:2
+    if p_fdr(i) < 0.001
+        stars = '***';
+    elseif p_fdr(i) < 0.01
+        stars = '**';
+    elseif p_fdr(i) < 0.05
+        stars = '*';
+    else
+        stars = '';
+    end
+
+    text(x(i), ci_high(i) + 0.05, stars, ...
+        'HorizontalAlignment','center', ...
+        'FontSize',16);
+end
+
+% ----------- STYLE -----------
+set(gca, ...
+    'FontSize',13, ...
+    'LineWidth',1.5, ...
+    'Box','off', ...
+    'TickDir','out');
+
+xlim([0.5 2.5]);
+ylim([-1 1]);
+
+hold off;
+ ## Under INB ### 
