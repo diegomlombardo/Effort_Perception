@@ -446,3 +446,30 @@ insula partial rho=0.108, Holm-Bonferroni p=1.0000
 dlPFC partial rho=0.234, Holm-Bonferroni p=0.6497 
 Head motion partial rho=0.129, Holm-Bonferroni p=1.0000 
 
+
+Check and alternative way to test partial correlations to see if they hold: 
+
+pvals = zeros(1,size(X_clean,2));
+
+for v = 1:size(X_clean,2)
+
+    ctrl = [X_clean(:,setdiff(1:end,v)) head_clean];
+
+    rv = tiedrank(X_clean(:,v));
+    ry = tiedrank(y_clean);
+
+    rv_res = rv - [ones(size(ctrl,1),1) ctrl] * ([ones(size(ctrl,1),1) ctrl] \ rv);
+    ry_res = ry - [ones(size(ctrl,1),1) ctrl] * ([ones(size(ctrl,1),1) ctrl] \ ry);
+
+    r = corr(rv_res, ry_res);
+
+    t = r * sqrt((length(y_clean)-size(ctrl,2)-2)/(1-r^2));
+    pvals(v) = 2*(1 - tcdf(abs(t), length(y_clean)-size(ctrl,2)-2));
+
+end
+>> pvals
+
+pvals =
+
+    0.1018    0.8890   S1 0.0008  Cingulate Meta-Roi  0.0025    0.4299    0.1551
+
