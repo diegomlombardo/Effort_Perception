@@ -176,4 +176,4 @@ for i = 1:2
         'FontSize',12);
 end
 % Optional overall title
-sgtitle('Brain–behavior relationship (controlled for motor output, Task 1)');
+sgtitle('Brain–behavior relationship (controlled for motor output, INB)');
