@@ -1,29 +1,62 @@
-% ----------- OBSERVED PARTIAL CORRELATION (Task Control) -----------
-[r_obs, ~] = partialcorr(X_clean(:,3:4), y_clean, mean_Task1);
-r_obs = r_obs(:)';  % ensure 1x2
 
-% ----------- PERMUTATION TEST -----------
+% =========================================================
+% PARTIAL CORRELATION: X_clean(:,3:4) vs y_clean
+% controlling for mean_Task2
+% =========================================================
+
+X = X_clean(:,3:4);
+y = y_clean;
+covar = mean_Task2;
+
 nperm = 5000;
-perm_r = zeros(nperm, 2);
 
-for p = 1:nperm
-    idx = randperm(length(y_clean));
-    y_perm = y_clean(idx);
+% =========================================================
+% ----------- OBSERVED PARTIAL CORRELATION ---------------
+% =========================================================
 
-    perm_r(p,:) = partialcorr(X_clean(:,3:4), y_perm, mean_Task1);
+r_obs = nan(1,2);
+
+for i = 1:2
+    r_obs(i) = partialcorr(X(:,i), y, covar);
 end
 
-% ----------- PERMUTATION P-VALUES -----------
-p_perm = zeros(1,2);
+% =========================================================
+% ----------- PERMUTATION TEST ---------------------------
+% =========================================================
+
+perm_r = nan(nperm, 2);
+
+n = length(y);
+
+for p = 1:nperm
+
+    idx = randperm(n);
+    y_perm = y(idx);
+
+    for i = 1:2
+        perm_r(p,i) = partialcorr(X(:,i), y_perm, covar);
+    end
+
+end
+
+% =========================================================
+% ----------- PERMUTATION P-VALUES -----------------------
+% =========================================================
+
+p_perm = nan(1,2);
+
 for i = 1:2
     p_perm(i) = mean(abs(perm_r(:,i)) >= abs(r_obs(i)));
 end
 
-% ----------- FDR CORRECTION (BH) -----------
+% =========================================================
+% ----------- FDR (Benjamini–Hochberg manual) -----------
+% =========================================================
+
 [p_sorted, sort_idx] = sort(p_perm);
 m = length(p_perm);
 
-p_fdr = zeros(size(p_perm));
+p_fdr = zeros(1,m);
 
 for k = 1:m
     p_fdr(sort_idx(k)) = min(1, p_sorted(k) * m / k);
@@ -33,33 +66,42 @@ for k = m-1:-1:1
     p_fdr(sort_idx(k)) = min(p_fdr(sort_idx(k)), p_fdr(sort_idx(k+1)));
 end
 
-% ----------- FIGURE -----------
+% =========================================================
+% -------------------- FIGURE -----------------------------
+% =========================================================
+
 figure('Color','w','Position',[300 300 800 400]);
 
 roi_names = {'Primary Sensory Cortex','Cingulate Meta-ROI'};
 
 for i = 1:2
-    subplot(1,2,i); hold on;
 
-    % Histogram (null distribution)
+    subplot(1,2,i);
+    hold on;
+
+    % Null distribution
     histogram(perm_r(:,i), 40, ...
         'FaceColor',[0.75 0.75 0.75], ...
         'EdgeColor','none');
 
-    % Rug plot
-    y_limits = ylim;
-    rug_y = y_limits(1) + 0.02*(y_limits(2)-y_limits(1));
+    % Rug plot (baseline aligned properly)
+    yl = ylim;
+    rug_y = yl(1) + 0.02*(yl(2)-yl(1));
 
-    plot(perm_r(:,i), repmat(rug_y, size(perm_r(:,i))), ...
-        '.', 'Color',[0.3 0.3 0.3]);
+    plot(perm_r(:,i), ...
+        repmat(rug_y, size(perm_r(:,i))), '.', ...
+        'Color',[0.3 0.3 0.3]);
 
     % Observed effect
-    xline(r_obs(i), 'r', 'LineWidth',2);
+    xline(r_obs(i), 'r', 'LineWidth', 2);
 
     % Zero line
-    xline(0,'--','Color',[0.5 0.5 0.5]);
+    xline(0, '--', 'Color', [0.5 0.5 0.5]);
 
-    % ----------- SIGNIFICANCE (FDR) -----------
+    % =====================================================
+    % Significance label (FDR corrected)
+    % =====================================================
+
     if p_fdr(i) < 0.001
         sig_label = 'p < 0.001 ***';
     elseif p_fdr(i) < 0.01
@@ -70,7 +112,7 @@ for i = 1:2
         sig_label = 'n.s.';
     end
 
-    text(0.05, 0.9, sig_label, ...
+    text(0.05, 0.90, sig_label, ...
         'Units','normalized', ...
         'FontSize',12);
 
@@ -79,12 +121,15 @@ for i = 1:2
     xlabel('Partial correlation (r)');
     ylabel('Frequency');
 
-    % Style
+    % Style (publication-ready)
     set(gca, ...
         'Box','off', ...
         'TickDir','out', ...
         'FontSize',12);
+
 end
+
+sgtitle('Brain–behavior relationship (controlled for motor output, INB)');
 
 ### For INB task ### 
 
