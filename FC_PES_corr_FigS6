@@ -1,0 +1,434 @@
+
+% =========================================================
+% TASK 1: CONTROL (NORMAL ISOMETRIC CONTRACTION)
+% =========================================================
+
+missing_subjects = [1, 9, 35];
+total_subjects = 47;
+
+valid_subjects = setdiff(1:total_subjects, missing_subjects);
+
+roi_groups.premotor      = [7];
+roi_groups.supplementary = [26];
+roi_groups.sensory       = [17];
+roi_groups.cingulate     = [29, 30];
+roi_groups.insula        = [34];
+roi_groups.dlPFC         = [3, 4];
+
+group_names = fieldnames(roi_groups);
+num_groups = length(group_names);
+num_fc_pairs = nchoosek(num_groups, 2);
+
+% ---------------- ROI extraction ----------------
+bold_task1 = nan(numel(valid_subjects), num_groups);
+
+sidx = 0;
+for subj = valid_subjects
+
+    sidx = sidx + 1;
+    file = ['ROIs_sub_' sprintf('%02d',subj) '_task1.mat'];
+
+    data = load(file);
+    bold = data.bold_data;
+
+    for g = 1:num_groups
+        roi_idx = roi_groups.(group_names{g});
+        bold_task1(sidx,g) = mean(bold(:,roi_idx),'all','omitnan');
+    end
+end
+
+% ---------------- outliers ----------------
+Z = zscore(bold_task1,0,1);
+outlier_mask = any(abs(Z)>3,2);
+
+bold_task1 = bold_task1(~outlier_mask,:);
+pes_clean1 = pes_totals(~outlier_mask);
+
+valid_clean = valid_subjects(~outlier_mask);
+n = size(bold_task1,1);
+
+assert(n == numel(pes_clean1));
+
+% ---------------- FC matrices ----------------
+partial_fc = nan(n,num_groups,num_groups);
+
+for s = 1:n
+
+    subj = valid_clean(s);
+    file = ['ROIs_sub_' sprintf('%02d',subj) '_task1.mat'];
+
+    data = load(file);
+    bold = data.bold_data;
+
+    ts = nan(size(bold,1),num_groups);
+
+    for g = 1:num_groups
+        roi_idx = roi_groups.(group_names{g});
+        ts(:,g) = mean(bold(:,roi_idx),2,'omitnan');
+    end
+
+    pcorr = eye(num_groups);
+
+    for i = 1:num_groups
+        for j = i+1:num_groups
+
+            ctrl = setdiff(1:num_groups,[i j]);
+            X = [ones(size(ts,1),1), ts(:,ctrl)];
+
+            bi = X \ ts(:,i);
+            bj = X \ ts(:,j);
+
+            ri = ts(:,i) - X*bi;
+            rj = ts(:,j) - X*bj;
+
+            ri = ri - mean(ri);
+            rj = rj - mean(rj);
+
+            r = sum(ri.*rj)/sqrt(sum(ri.^2)*sum(rj.^2));
+
+            pcorr(i,j)=r;
+            pcorr(j,i)=r;
+        end
+    end
+
+    partial_fc(s,:,:) = pcorr;
+end
+
+% ---------------- FC pairs ----------------
+fc_pairs = nan(n,num_fc_pairs);
+
+p = 0;
+for i = 1:num_groups-1
+    for j = i+1:num_groups
+        p = p + 1;
+        fc_pairs(:,p) = squeeze(partial_fc(:,i,j));
+    end
+end
+
+% ---------------- Spearman (manual ranks) ----------------
+fc_ranks = nan(size(fc_pairs));
+
+for i = 1:num_fc_pairs
+    x = fc_pairs(:,i);
+    [~,idx] = sort(x);
+
+    rnk = zeros(n,1);
+
+    r=1;
+    while r<=n
+        v=x(idx(r));
+        t=r;
+        while t<=n && x(idx(t))==v
+            t=t+1;
+        end
+        avg=mean(r:t-1);
+        for k=r:t-1
+            rnk(idx(k))=avg;
+        end
+        r=t;
+    end
+
+    fc_ranks(:,i)=rnk;
+end
+
+% PES ranks
+[~,idx]=sort(pes_clean1);
+pes_ranks=zeros(n,1);
+
+r=1;
+while r<=n
+    v=pes_clean1(idx(r));
+    t=r;
+    while t<=n && pes_clean1(idx(t))==v
+        t=t+1;
+    end
+    avg=mean(r:t-1);
+    for k=r:t-1
+        pes_ranks(idx(k))=avg;
+    end
+    r=t;
+end
+
+% ---------------- stats ----------------
+rho=zeros(1,num_fc_pairs);
+pvals=zeros(1,num_fc_pairs);
+
+for i=1:num_fc_pairs
+    x=fc_ranks(:,i);
+    y=pes_ranks;
+
+    x=x-mean(x);
+    y=y-mean(y);
+
+    rho(i)=sum(x.*y)/sqrt(sum(x.^2)*sum(y.^2));
+
+    t=rho(i)*sqrt((n-2)/max(1e-10,(1-rho(i)^2)));
+    pvals(i)=2*(1-tcdf(abs(t),n-2));
+end
+
+% ---------------- FDR ----------------
+[m,idx]=sort(pvals);
+q=zeros(1,num_fc_pairs);
+
+for i=1:num_fc_pairs
+    q(idx(i))=m(i)*num_fc_pairs/i;
+end
+
+for i=num_fc_pairs-1:-1:1
+    q(idx(i))=min(q(idx(i)),q(idx(i+1)));
+end
+
+q=min(q,1);
+
+% ---------------- FIGURE ----------------
+nRows=ceil(sqrt(num_fc_pairs));
+nCols=ceil(num_fc_pairs/nRows);
+
+figure('Color','w','Position',[100 100 900 900]);
+
+p=0;
+for i=1:num_groups-1
+    for j=i+1:num_groups
+        p=p+1;
+
+        subplot(nRows,nCols,p);
+
+        x=fc_pairs(:,p);
+        y=pes_clean1;
+
+        scatter(x,y,45,'filled','MarkerFaceAlpha',0.75,'MarkerEdgeColor','none');
+        hold on;
+
+        b=polyfit(x,y,1);
+        xx=linspace(min(x),max(x),100);
+        yy=polyval(b,xx);
+        plot(xx,yy,'k-','LineWidth',1.5);
+
+        xlabel(sprintf('%s–%s',group_names{i},group_names{j}));
+        ylabel('PES');
+
+        title(sprintf('\\rho=%.2f, q=%.3f',rho(p),q(p)));
+
+        grid on; box off;
+        set(gca,'FontSize',10);
+    end
+end
+
+
+
+
+
+% =========================================================
+% TASK 2: INB CONDITION
+% =========================================================
+
+valid_subjects = setdiff(1:47,[1 9 35]);
+
+roi_groups.premotor      = [7];
+roi_groups.supplementary = [26];
+roi_groups.sensory       = [17];
+roi_groups.cingulate     = [29, 30];
+roi_groups.insula        = [34];
+roi_groups.dlPFC         = [3, 4];
+
+group_names = fieldnames(roi_groups);
+num_groups = length(group_names);
+num_fc_pairs = nchoosek(num_groups, 2);
+
+% ---------------- ROI extraction ----------------
+bold_task2 = nan(numel(valid_subjects), num_groups);
+
+sidx = 0;
+for subj = valid_subjects
+
+    sidx = sidx + 1;
+    file = ['ROIs_sub_' sprintf('%02d',subj) '_task2.mat'];
+
+    data = load(file);
+    bold = data.bold_data;
+
+    for g = 1:num_groups
+        roi_idx = roi_groups.(group_names{g});
+        bold_task2(sidx,g) = mean(bold(:,roi_idx),'all','omitnan');
+    end
+end
+
+% ---------------- outliers ----------------
+Z = zscore(bold_task2,0,1);
+outlier_mask = any(abs(Z)>3,2);
+
+bold_task2 = bold_task2(~outlier_mask,:);
+pes_clean2 = pes_totals(~outlier_mask);
+
+valid_clean = valid_subjects(~outlier_mask);
+n = size(bold_task2,1);
+
+assert(n == numel(pes_clean2));
+
+% ---------------- FC ----------------
+partial_fc = nan(n,num_groups,num_groups);
+
+for s = 1:n
+
+    subj = valid_clean(s);
+    file = ['ROIs_sub_' sprintf('%02d',subj) '_task2.mat'];
+
+    data = load(file);
+    bold = data.bold_data;
+
+    ts = nan(size(bold,1),num_groups);
+
+    for g = 1:num_groups
+        roi_idx = roi_groups.(group_names{g});
+        ts(:,g) = mean(bold(:,roi_idx),2,'omitnan');
+    end
+
+    pcorr = eye(num_groups);
+
+    for i=1:num_groups
+        for j=i+1:num_groups
+
+            ctrl=setdiff(1:num_groups,[i j]);
+            X=[ones(size(ts,1),1), ts(:,ctrl)];
+
+            bi=X\ts(:,i);
+            bj=X\ts(:,j);
+
+            ri=ts(:,i)-X*bi;
+            rj=ts(:,j)-X*bj;
+
+            ri=ri-mean(ri);
+            rj=rj-mean(rj);
+
+            r=sum(ri.*rj)/sqrt(sum(ri.^2)*sum(rj.^2));
+
+            pcorr(i,j)=r;
+            pcorr(j,i)=r;
+        end
+    end
+
+    partial_fc(s,:,:) = pcorr;
+end
+
+% ---------------- FC pairs ----------------
+fc_pairs = nan(n,num_fc_pairs);
+
+p=0;
+for i=1:num_groups-1
+    for j=i+1:num_groups
+        p=p+1;
+        fc_pairs(:,p)=squeeze(partial_fc(:,i,j));
+    end
+end
+
+% ---------------- Spearman ----------------
+fc_ranks = nan(size(fc_pairs));
+
+for i=1:num_fc_pairs
+    x=fc_pairs(:,i);
+    [~,idx]=sort(x);
+
+    rnk=zeros(n,1);
+
+    r=1;
+    while r<=n
+        v=x(idx(r));
+        t=r;
+        while t<=n && x(idx(t))==v
+            t=t+1;
+        end
+        avg=mean(r:t-1);
+        for k=r:t-1
+            rnk(idx(k))=avg;
+        end
+        r=t;
+    end
+
+    fc_ranks(:,i)=rnk;
+end
+
+[~,idx]=sort(pes_clean2);
+pes_ranks=zeros(n,1);
+
+r=1;
+while r<=n
+    v=pes_clean2(idx(r));
+    t=r;
+    while t<=n && pes_clean2(idx(t))==v
+        t=t+1;
+    end
+    avg=mean(r:t-1);
+    for k=r:t-1
+        pes_ranks(idx(k))=avg;
+    end
+    r=t;
+end
+
+% ---------------- stats ----------------
+rho=zeros(1,num_fc_pairs);
+pvals=zeros(1,num_fc_pairs);
+
+for i=1:num_fc_pairs
+    x=fc_ranks(:,i);
+    y=pes_ranks;
+
+    x=x-mean(x);
+    y=y-mean(y);
+
+    rho(i)=sum(x.*y)/sqrt(sum(x.^2)*sum(y.^2));
+
+    t=rho(i)*sqrt((n-2)/max(1e-10,(1-rho(i)^2)));
+    pvals(i)=2*(1-tcdf(abs(t),n-2));
+end
+
+% ---------------- FDR ----------------
+[m,idx]=sort(pvals);
+q=zeros(1,num_fc_pairs);
+
+for i=1:num_fc_pairs
+    q(idx(i))=m(i)*num_fc_pairs/i;
+end
+
+for i=num_fc_pairs-1:-1:1
+    q(idx(i))=min(q(idx(i)),q(idx(i+1)));
+end
+
+q=min(q,1);
+
+% ---------------- FIGURE ----------------
+nRows=ceil(sqrt(num_fc_pairs));
+nCols=ceil(num_fc_pairs/nRows);
+
+figure('Color','w','Position',[100 100 900 900]);
+
+p=0;
+for i=1:num_groups-1
+    for j=i+1:num_groups
+        p=p+1;
+
+        subplot(nRows,nCols,p);
+
+        x=fc_pairs(:,p);
+        y=pes_clean2;
+
+        scatter(x,y,45,'filled','MarkerFaceAlpha',0.75,'MarkerEdgeColor','none');
+        hold on;
+
+        b=polyfit(x,y,1);
+        xx=linspace(min(x),max(x),100);
+        yy=polyval(b,xx);
+        plot(xx,yy,'k-','LineWidth',1.5);
+
+        xlabel(sprintf('%s–%s',group_names{i},group_names{j}));
+        ylabel('PES');
+
+        title(sprintf('\\rho=%.2f, q=%.3f',rho(p),q(p)));
+
+        grid on; box off;
+        set(gca,'FontSize',10);
+    end
+end
+
+sgtitle('INB condition');
+
+sgtitle('Control condition (normal isometric contraction)');
