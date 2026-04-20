@@ -49,3 +49,171 @@ end
 fprintf('\nInterpretation:\n');
 fprintf('- VIF > 5 suggests moderate multicollinearity.\n');
 fprintf('- VIF > 10 suggests high multicollinearity.\n\n');
+
+
+## To ensure that multicollinearity did not influence the results, BOLD activity within 
+the regions of interest (ROIs) was assessed using bivariate correlations with PES##
+% =========================================================
+% BOOTSTRAP CI + PERMUTATION TEST
+% ROI vs PES (independent)
+% =========================================================
+
+X = X_clean(:,3:4);   % ROIs: [Sensory, Cingulate]
+y = y_clean;
+
+nboot = 5000;
+nperm = 5000;
+n = length(y);
+
+num_rois = size(X,2);
+
+r_obs   = nan(1,num_rois);
+ci_low  = nan(1,num_rois);
+ci_high = nan(1,num_rois);
+p_perm  = nan(1,num_rois);
+
+for i = 1:num_rois
+
+    ROI = X(:,i);
+
+    % =====================================================
+    % OBSERVED CORRELATION
+    % =====================================================
+    r_obs(i) = corr(ROI, y, 'Type', 'Pearson');
+
+    % =====================================================
+    % BOOTSTRAP (confidence intervals)
+    % =====================================================
+    r_boot = nan(nboot,1);
+
+    for b = 1:nboot
+        idx = randi(n, n, 1);  % resample with replacement
+        r_boot(b) = corr(ROI(idx), y(idx), 'Type', 'Pearson');
+    end
+
+    ci = prctile(r_boot, [2.5 97.5]);
+    ci_low(i)  = ci(1);
+    ci_high(i) = ci(2);
+
+    % =====================================================
+    % PERMUTATION TEST (null distribution)
+    % =====================================================
+    r_perm = nan(nperm,1);
+
+    for p = 1:nperm
+        idx = randperm(n);
+        y_perm = y(idx);
+        r_perm(p) = corr(ROI, y_perm, 'Type', 'Pearson');
+    end
+
+    % two-sided p-value
+    p_perm(i) = mean(abs(r_perm) >= abs(r_obs(i)));
+
+end
+
+% =========================================================
+% DISPLAY RESULTS
+% =========================================================
+
+roi_names = {'Primary Sensory Cortex','Cingulate Meta-ROI'};
+
+for i = 1:num_rois
+    fprintf('%s vs PES:\n', roi_names{i});
+    fprintf('  r = %.3f\n', r_obs(i));
+    fprintf('  95%% CI = [%.3f, %.3f]\n', ci_low(i), ci_high(i));
+    fprintf('  p (permutation) = %.4f\n\n', p_perm(i));
+end
+
+% =========================================================
+% TOP-TIER FIGURE: BOOTSTRAP + PERMUTATION + OBSERVED r
+% =========================================================
+
+figure;
+tiledlayout(1, num_rois, 'Padding', 'compact', 'TileSpacing', 'compact');
+
+for i = 1:num_rois
+
+    nexttile;
+
+    % =====================================================
+    % Recompute distributions for plotting clarity
+    % (you can also store them earlier if preferred)
+    % =====================================================
+
+    ROI = X(:,i);
+
+    % --- bootstrap ---
+    r_boot = nan(nboot,1);
+    for b = 1:nboot
+        idx = randi(n, n, 1);
+        r_boot(b) = corr(ROI(idx), y(idx));
+    end
+
+    % --- permutation ---
+    r_perm = nan(nperm,1);
+    for p = 1:nperm
+        y_perm = y(randperm(n));
+        r_perm(p) = corr(ROI, y_perm);
+    end
+
+    % =====================================================
+    % Plot permutation null distribution
+    % =====================================================
+    histogram(r_perm, 60, ...
+        'Normalization', 'pdf', ...
+        'FaceColor', [0.75 0.75 0.75], ...
+        'EdgeColor', 'none');
+    hold on;
+
+    % Smooth density overlay (much nicer visually)
+    [f, xi] = ksdensity(r_perm);
+    plot(xi, f, 'k', 'LineWidth', 1.5);
+
+    % =====================================================
+    % Observed correlation
+    % =====================================================
+    xline(r_obs(i), 'r', 'LineWidth', 2.5);
+
+    % =====================================================
+    % Bootstrap CI
+    % =====================================================
+    ci = prctile(r_boot, [2.5 97.5]);
+
+    ylims = ylim;
+    plot([ci(1) ci(2)], [ylims(2)*0.85 ylims(2)*0.85], ...
+        'k-', 'LineWidth', 4);
+
+    % endpoints of CI
+    plot(ci(1), ylims(2)*0.85, 'k.', 'MarkerSize', 18);
+    plot(ci(2), ylims(2)*0.85, 'k.', 'MarkerSize', 18);
+
+    % =====================================================
+    % Zero line
+    % =====================================================
+    xline(0, ':', 'Color', [0.3 0.3 0.3]);
+
+    % =====================================================
+    % Formatting
+    % =====================================================
+    title(roi_names{i}, 'FontWeight', 'bold', 'FontSize', 12);
+    xlabel('Correlation (r)');
+    ylabel('Density');
+
+    grid on;
+    box off;
+
+    % =====================================================
+    % Annotation (p-value)
+    % =====================================================
+    text(0.02, ylims(2)*0.95, ...
+        sprintf('p_{perm} = %.3f', p_perm(i)), ...
+        'FontSize', 11, 'FontWeight', 'bold');
+
+    text(0.02, ylims(2)*0.88, ...
+        sprintf('r = %.2f', r_obs(i)), ...
+        'FontSize', 11);
+
+end
+
+sgtitle('ROI–PES Relationship: Permutation Null + Bootstrap CI', ...
+    'FontWeight', 'bold', 'FontSize', 14);
