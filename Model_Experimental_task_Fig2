@@ -469,7 +469,3 @@ for v = 1:size(X_clean,2)
 end
 >> pvals
 
-pvals =
-
-    0.1018    0.8890   S1 0.0008  Cingulate Meta-Roi  0.0025    0.4299    0.1551
-
