@@ -1,7 +1,5 @@
-
 % =========================================================
-% PARTIAL CORRELATION: X_clean(:,3:4) vs y_clean
-% controlling for mean_Task2
+% INB: Partial correlation analysis (FDR + bootstrap CI)
 % =========================================================
 
 X = X_clean(:,3:4);
@@ -9,258 +7,251 @@ y = y_clean;
 covar = mean_Task2;
 
 nperm = 5000;
+nboot = 5000;
+n = length(y);
+
+roi_names = {'Primary Sensory Cortex','Cingulate Cortex'};
 
 % =========================================================
-% ----------- OBSERVED PARTIAL CORRELATION ---------------
+% OBSERVED EFFECTS
 % =========================================================
 
-r_obs = nan(1,2);
+r_obs = zeros(1,2);
 
 for i = 1:2
     r_obs(i) = partialcorr(X(:,i), y, covar);
 end
 
 % =========================================================
-% ----------- PERMUTATION TEST ---------------------------
+% PERMUTATION TEST
 % =========================================================
 
-perm_r = nan(nperm, 2);
-
-n = length(y);
+perm_r = zeros(nperm,2);
 
 for p = 1:nperm
-
-    idx = randperm(n);
-    y_perm = y(idx);
+    y_perm = y(randperm(n));
 
     for i = 1:2
         perm_r(p,i) = partialcorr(X(:,i), y_perm, covar);
     end
-
 end
 
-% =========================================================
-% ----------- PERMUTATION P-VALUES -----------------------
-% =========================================================
-
-p_perm = nan(1,2);
+p_perm = zeros(1,2);
 
 for i = 1:2
     p_perm(i) = mean(abs(perm_r(:,i)) >= abs(r_obs(i)));
 end
 
 % =========================================================
-% ----------- FDR (Benjamini–Hochberg manual) -----------
+% FDR CORRECTION
 % =========================================================
 
-[p_sorted, sort_idx] = sort(p_perm);
+[p_sorted, idx] = sort(p_perm);
 m = length(p_perm);
 
 p_fdr = zeros(1,m);
 
 for k = 1:m
-    p_fdr(sort_idx(k)) = min(1, p_sorted(k) * m / k);
+    p_fdr(idx(k)) = min(1, p_sorted(k) * m / k);
 end
 
 for k = m-1:-1:1
-    p_fdr(sort_idx(k)) = min(p_fdr(sort_idx(k)), p_fdr(sort_idx(k+1)));
+    p_fdr(idx(k)) = min(p_fdr(idx(k)), p_fdr(idx(k+1)));
 end
 
 % =========================================================
-% -------------------- FIGURE -----------------------------
+% BOOTSTRAP CI (OBSERVED EFFECT)
 % =========================================================
 
-figure('Color','w','Position',[300 300 800 400]);
+boot_r = zeros(nboot,2);
 
-roi_names = {'Primary Sensory Cortex','Cingulate Meta-ROI'};
+for b = 1:nboot
+    samp = randi(n,n,1);
+
+    for i = 1:2
+        boot_r(b,i) = partialcorr(X(samp,i), y(samp), covar(samp));
+    end
+end
+
+ci_low  = prctile(boot_r,2.5);
+ci_high = prctile(boot_r,97.5);
+
+% =========================================================
+% FIGURE
+% =========================================================
+
+figure('Color','w','Position',[300 300 850 400]);
 
 for i = 1:2
 
     subplot(1,2,i);
     hold on;
 
-    % Null distribution
-    histogram(perm_r(:,i), 40, ...
-        'FaceColor',[0.75 0.75 0.75], ...
+    histogram(perm_r(:,i),40, ...
+        'FaceColor',[0.85 0.85 0.85], ...
         'EdgeColor','none');
 
-    % Rug plot (baseline aligned properly)
     yl = ylim;
-    rug_y = yl(1) + 0.02*(yl(2)-yl(1));
 
-    plot(perm_r(:,i), ...
-        repmat(rug_y, size(perm_r(:,i))), '.', ...
-        'Color',[0.3 0.3 0.3]);
+    % observed
+    xline(r_obs(i),'r','LineWidth',2);
+    xline(0,'--','Color',[0.5 0.5 0.5]);
 
-    % Observed effect
-    xline(r_obs(i), 'r', 'LineWidth', 2);
+    % bootstrap CI
+    patch([ci_low(i) ci_high(i) ci_high(i) ci_low(i)], ...
+          [yl(1) yl(1) yl(2) yl(2)], ...
+          [0.3 0.6 1], ...
+          'FaceAlpha',0.15, ...
+          'EdgeColor','none');
 
-    % Zero line
-    xline(0, '--', 'Color', [0.5 0.5 0.5]);
-
-    % =====================================================
-    % Significance label (FDR corrected)
-    % =====================================================
-
+    % SIGNIFICANCE (NO EXACT P-VALUES)
     if p_fdr(i) < 0.001
-        sig_label = 'p < 0.001 ***';
+        sig = 'P < 0.001 ***';
     elseif p_fdr(i) < 0.01
-        sig_label = 'p < 0.01 **';
+        sig = 'P < 0.01 **';
     elseif p_fdr(i) < 0.05
-        sig_label = 'p < 0.05 *';
+        sig = 'P < 0.05 *';
     else
-        sig_label = 'n.s.';
+        sig = 'n.s.';
     end
 
-    text(0.05, 0.90, sig_label, ...
-        'Units','normalized', ...
-        'FontSize',12);
-
-    % Labels
     title(roi_names{i});
     xlabel('Partial correlation (r)');
     ylabel('Frequency');
 
-    % Style (publication-ready)
-    set(gca, ...
-        'Box','off', ...
-        'TickDir','out', ...
-        'FontSize',12);
+    text(0.05,0.90,sig, ...
+        'Units','normalized','FontSize',11);
 
-end
-
-sgtitle('Brain–behavior relationship (controlled for motor output, INB)');
-
-### For INB task ### 
+    set(gca,'Box','off','TickDir','out','FontSize',12);
 
 % =========================================================
-% PARTIAL CORRELATION: X_clean(:,3:4) vs y_clean
-% controlling for mean_Task2
+% CONTROL: Partial correlation analysis (FDR + bootstrap CI)
 % =========================================================
 
 X = X_clean(:,3:4);
 y = y_clean;
-covar = mean_Task2;
+covar = mean_Task1;
 
 nperm = 5000;
+nboot = 5000;
+n = length(y);
+
+roi_names = {'Primary Sensory Cortex','Cingulate Cortex'};
 
 % =========================================================
-% ----------- OBSERVED PARTIAL CORRELATION ---------------
+% OBSERVED EFFECTS
 % =========================================================
 
-r_obs = nan(1,2);
+r_obs = zeros(1,2);
 
 for i = 1:2
     r_obs(i) = partialcorr(X(:,i), y, covar);
 end
 
 % =========================================================
-% ----------- PERMUTATION TEST ---------------------------
+% PERMUTATION TEST
 % =========================================================
 
-perm_r = nan(nperm, 2);
-
-n = length(y);
+perm_r = zeros(nperm,2);
 
 for p = 1:nperm
-
-    idx = randperm(n);
-    y_perm = y(idx);
+    y_perm = y(randperm(n));
 
     for i = 1:2
         perm_r(p,i) = partialcorr(X(:,i), y_perm, covar);
     end
-
 end
 
-% =========================================================
-% ----------- PERMUTATION P-VALUES -----------------------
-% =========================================================
-
-p_perm = nan(1,2);
+p_perm = zeros(1,2);
 
 for i = 1:2
     p_perm(i) = mean(abs(perm_r(:,i)) >= abs(r_obs(i)));
 end
 
 % =========================================================
-% ----------- FDR (Benjamini–Hochberg manual) -----------
+% FDR CORRECTION
 % =========================================================
 
-[p_sorted, sort_idx] = sort(p_perm);
+[p_sorted, idx] = sort(p_perm);
 m = length(p_perm);
 
 p_fdr = zeros(1,m);
 
 for k = 1:m
-    p_fdr(sort_idx(k)) = min(1, p_sorted(k) * m / k);
+    p_fdr(idx(k)) = min(1, p_sorted(k) * m / k);
 end
 
 for k = m-1:-1:1
-    p_fdr(sort_idx(k)) = min(p_fdr(sort_idx(k)), p_fdr(sort_idx(k+1)));
+    p_fdr(idx(k)) = min(p_fdr(idx(k)), p_fdr(idx(k+1)));
 end
 
 % =========================================================
-% -------------------- FIGURE -----------------------------
+% BOOTSTRAP CI
 % =========================================================
 
-figure('Color','w','Position',[300 300 800 400]);
+boot_r = zeros(nboot,2);
 
-roi_names = {'Primary Sensory Cortex','Cingulate Meta-ROI'};
+for b = 1:nboot
+    samp = randi(n,n,1);
+
+    for i = 1:2
+        boot_r(b,i) = partialcorr(X(samp,i), y(samp), covar(samp));
+    end
+end
+
+ci_low  = prctile(boot_r,2.5);
+ci_high = prctile(boot_r,97.5);
+
+% =========================================================
+% FIGURE
+% =========================================================
+
+figure('Color','w','Position',[300 300 850 400]);
 
 for i = 1:2
 
     subplot(1,2,i);
     hold on;
 
-    % Null distribution
-    histogram(perm_r(:,i), 40, ...
-        'FaceColor',[0.75 0.75 0.75], ...
+    histogram(perm_r(:,i),40, ...
+        'FaceColor',[0.85 0.85 0.85], ...
         'EdgeColor','none');
 
-    % Rug plot (baseline aligned properly)
     yl = ylim;
-    rug_y = yl(1) + 0.02*(yl(2)-yl(1));
 
-    plot(perm_r(:,i), ...
-        repmat(rug_y, size(perm_r(:,i))), '.', ...
-        'Color',[0.3 0.3 0.3]);
+    xline(r_obs(i),'r','LineWidth',2);
+    xline(0,'--','Color',[0.5 0.5 0.5]);
 
-    % Observed effect
-    xline(r_obs(i), 'r', 'LineWidth', 2);
+    patch([ci_low(i) ci_high(i) ci_high(i) ci_low(i)], ...
+          [yl(1) yl(1) yl(2) yl(2)], ...
+          [1 0.5 0.3], ...
+          'FaceAlpha',0.15, ...
+          'EdgeColor','none');
 
-    % Zero line
-    xline(0, '--', 'Color', [0.5 0.5 0.5]);
-
-    % =====================================================
-    % Significance label (FDR corrected)
-    % =====================================================
-
+    % SIGNIFICANCE (NO EXACT P-VALUES)
     if p_fdr(i) < 0.001
-        sig_label = 'p < 0.001 ***';
+        sig = 'P < 0.001 ***';
     elseif p_fdr(i) < 0.01
-        sig_label = 'p < 0.01 **';
+        sig = 'P < 0.01 **';
     elseif p_fdr(i) < 0.05
-        sig_label = 'p < 0.05 *';
+        sig = 'P < 0.05 *';
     else
-        sig_label = 'n.s.';
+        sig = 'n.s.';
     end
 
-    text(0.05, 0.90, sig_label, ...
-        'Units','normalized', ...
-        'FontSize',12);
-
-    % Labels
     title(roi_names{i});
     xlabel('Partial correlation (r)');
     ylabel('Frequency');
 
-    % Style (publication-ready)
-    set(gca, ...
-        'Box','off', ...
-        'TickDir','out', ...
-        'FontSize',12);
+    text(0.05,0.90,sig, ...
+        'Units','normalized','FontSize',11);
+
+    set(gca,'Box','off','TickDir','out','FontSize',12);
 
 end
 
-sgtitle('Brain–behavior relationship (controlled for motor output, INB)');
+sgtitle('Control: Brain–behavior relationship (FDR + bootstrap CI)');
+
+end
+
+sgtitle('INB: Brain–behavior relationship (FDR + bootstrap CI)');
