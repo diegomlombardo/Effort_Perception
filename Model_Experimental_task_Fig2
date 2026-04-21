@@ -416,7 +416,7 @@ for g = 1:num_groups
         'FontSize', 16, 'FontWeight', 'bold', 'HorizontalAlignment', 'center');
 
     xlabel(sprintf('%s (Residualized)', pname), 'FontSize', 14);
-    ylabel('PES Total (Residualized)', 'FontSize', 14);
+    ylabel('PES (Residualized)', 'FontSize', 14);
 
     box on;
     set(gca, 'FontSize', 13, 'LineWidth', 1.5);
