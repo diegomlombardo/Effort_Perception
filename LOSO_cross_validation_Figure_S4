@@ -161,139 +161,74 @@ for j = 1:length(b_full)
     fprintf(' %-25s | Beta = %+7.4f | p = %.4g\n', label, b_full(j), p_vals(j));
 end
 
-
-Simple PLOT
-
 % ----------------- PUBLICATION-QUALITY ROI BETA PLOT ------------------
 
-% Internal ROI names (used for indexing)
+% Internal ROI names (MUST match roi_groups order)
 rois_internal = {
     'premotor'
     'supplementary'
-    'cingulate'
     'sensory'
+    'cingulate'
     'insula'
+    'dlPFC'
 };
 
-% Pretty display names for legend
+% Final figure labels (as requested)
 rois_display = {
-    'Premotor Cortex (Precentral Gyrus)'
-    'Supplementary Motor Area'
-    'Cingulate Cortex Meta-ROI'
-    'Primary Sensory Cortex (S1)'
-    'Insular Cortex'
+    'Premotor Cortex'
+    'SMA'
+    'S1'
+    'Cingulate Cortex'
+    'Insula'
+    'dlPFC'
 };
 
-% Find indices
+% Find indices in model
 [found_flags, roi_indices] = ismember(rois_internal, group_names);
+
 if any(~found_flags)
     fprintf('\n--- ROI Name Matching Error ---\n');
     disp(rois_internal(~found_flags)')
-    error('Check spelling/formatting of ROI names.');
+    error('Check ROI names vs group_names ordering.');
 end
 
-% Extract beta values
-B_selected = B_all(roi_indices + 1, :);  % +1 skips intercept
+% Extract LOSO betas (IMPORTANT: +1 skips intercept)
+B_selected = B_all(roi_indices + 1, :);
 
-% Create figure
+% ----------------- FIGURE -----------------
 figure('Color', 'w', 'Units', 'inches', 'Position', [1, 1, 9, 6]);
 hold on;
 
-% Color scheme
-colors = lines(length(roi_indices));
+colors = lines(length(rois_internal));
 
-% Plot each ROI with thick lines and bigger markers
-for i = 1:length(roi_indices)
+for i = 1:length(rois_internal)
     plot(1:n_clean, B_selected(i, :), '-o', ...
-        'LineWidth', 3, ...          % << Thicker lines
-        'MarkerSize', 8, ...         % << Larger markers
+        'LineWidth', 3, ...
+        'MarkerSize', 8, ...
         'Color', colors(i,:), ...
         'DisplayName', rois_display{i});
 end
 
-% Axis labels
 xlabel('LOSO Fold (Held-Out Subject Index)', ...
     'FontSize', 16, 'FontWeight', 'bold');
 
 ylabel('Beta Coefficient', ...
     'FontSize', 16, 'FontWeight', 'bold');
 
-% Bigger title/caption
-title('Beta Coefficients Across LOSO Folds for Selected ROIs', ...
-    'FontSize', 18, 'FontWeight', 'bold');  % << Larger caption
+title('LOSO Beta Coefficients Across ROIs', ...
+    'FontSize', 18, 'FontWeight', 'bold');
 
-% Legend (optional: set Orientation to 'horizontal' for top legend)
 legend('Location', 'northoutside', ...
     'Orientation', 'horizontal', ...
     'FontSize', 13, 'Box', 'off');
 
-% Clean axes
 set(gca, ...
     'FontSize', 14, ...
     'FontName', 'Helvetica', ...
-    'LineWidth', 2, ...              % << Wider axis lines
+    'LineWidth', 2, ...
     'TickDir', 'out', ...
     'Box', 'off');
 
-% No grid
 grid off;
-
-% Tight layout (optional, if tightfig installed)
-
-
-% ------------ LOSO CROSS-VALIDATION ------------
-n_clean = size(X_norm, 1);  % Number of clean (non-outlier) subjects
-y_pred_LOSO = nan(n_clean, 1);
-
-for i = 1:n_clean
-    % Logical mask for train/test split
-    test_mask = false(n_clean, 1);
-    test_mask(i) = true;
-    train_mask = ~test_mask;
-
-    % Training data
-    X_train = X_norm(train_mask, :);
-    y_train = y_clean(train_mask);
-    head_train = head_norm(train_mask);
-
-    % Test data
-    X_test = X_norm(test_mask, :);
-    y_test = y_clean(test_mask);
-    head_test = head_norm(test_mask);
-
-    % Add intercept
-    X_reg_train = [ones(sum(train_mask),1), X_train, head_train];
-    X_reg_test  = [1, X_test, head_test];  % row vector
-
-    % Fit model on training data
-    b_LOSO = regress(y_train, X_reg_train);
-
-    % Predict for held-out subject
-    y_pred_LOSO(i) = X_reg_test * b_LOSO;
-end
-
-% ------------ EVALUATE LOSO PERFORMANCE ------------
-r_LOSO = corr(y_clean, y_pred_LOSO);
-rmse_LOSO = sqrt(mean((y_clean - y_pred_LOSO).^2));
-
-fprintf('\n--- LOSO Cross-Validation ---\n');
-fprintf('LOSO Pearson r = %.3f\n', r_LOSO);
-fprintf('LOSO RMSE = %.3f\n', rmse_LOSO);
-
-
-figure;
-scatter(y_clean, y_pred_LOSO, 70, 'filled', 'MarkerFaceColor', [0.2 0.6 0.9]);
-hold on;
-lsline;  % least-squares line
-xlabel('Actual PES Total');
-ylabel('Predicted PES (LOSO)');
-title(sprintf('LOSO Prediction (r = %.3f, RMSE = %.2f)', r_LOSO, rmse_LOSO));
-grid on;
-box on;
-
-% tightfig();
-
-% Optional: Save high-res
-% print(gcf, 'LOSO_ROI_Betas_Publication', '-dpdf', '-painters');
-% print(gcf, 'LOSO_ROI_Betas_Publication', '-dpng', '-r600');
+Simple PLOT
 
