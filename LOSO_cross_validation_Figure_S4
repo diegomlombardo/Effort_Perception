@@ -5,6 +5,9 @@ roi_groups.cingulate     = [29, 30];
 roi_groups.insula        = [34];
 roi_groups.dlPFC         = [3, 4];  % <-- Added dlPFC even do not anatomically accurate based in Harvard-Oxford Atlas
 
+group_names = fieldnames(roi_groups);
+num_groups = length(group_names);
+
 % ---------------------- SETUP -------------------------
 n_clean = size(X_norm, 1);       % Number of clean subjects
 n_features = size(X_norm, 2);    % Number of ROI features
