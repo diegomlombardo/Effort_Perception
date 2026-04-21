@@ -1,5 +1,5 @@
 % =========================================================
-% INB: Partial correlation analysis (FDR + bootstrap CI)
+% INB: Partial correlation analysis (FDR + bootstrap CI + rug)
 % =========================================================
 
 X = X_clean(:,3:4);
@@ -10,7 +10,7 @@ nperm = 5000;
 nboot = 5000;
 n = length(y);
 
-roi_names = {'Primary Sensory Cortex','Cingulate Cortex'};
+roi_names = {'S1','Cingulate Cortex'};
 
 % =========================================================
 % OBSERVED EFFECTS
@@ -60,7 +60,7 @@ for k = m-1:-1:1
 end
 
 % =========================================================
-% BOOTSTRAP CI (OBSERVED EFFECT)
+% BOOTSTRAP CI
 % =========================================================
 
 boot_r = zeros(nboot,2);
@@ -87,24 +87,33 @@ for i = 1:2
     subplot(1,2,i);
     hold on;
 
+    % histogram
     histogram(perm_r(:,i),40, ...
         'FaceColor',[0.85 0.85 0.85], ...
         'EdgeColor','none');
 
     yl = ylim;
 
-    % observed
+    % observed + zero
     xline(r_obs(i),'r','LineWidth',2);
     xline(0,'--','Color',[0.5 0.5 0.5]);
 
-    % bootstrap CI
+    % CI
     patch([ci_low(i) ci_high(i) ci_high(i) ci_low(i)], ...
           [yl(1) yl(1) yl(2) yl(2)], ...
           [0.3 0.6 1], ...
           'FaceAlpha',0.15, ...
           'EdgeColor','none');
 
-    % SIGNIFICANCE (NO EXACT P-VALUES)
+    % ---------------- BOOTSTRAP RUG ----------------
+    rug_y = yl(1) + 0.02*(yl(2)-yl(1));
+    plot(boot_r(:,i), ...
+         repmat(rug_y,size(boot_r(:,i))), ...
+         '.', ...
+         'Color',[1 0 0], ...
+         'MarkerSize',8);
+
+    % significance
     if p_fdr(i) < 0.001
         sig = 'P < 0.001 ***';
     elseif p_fdr(i) < 0.01
@@ -124,8 +133,10 @@ for i = 1:2
 
     set(gca,'Box','off','TickDir','out','FontSize',12);
 
+end
+
 % =========================================================
-% CONTROL: Partial correlation analysis (FDR + bootstrap CI)
+% CONTROL: Partial correlation analysis (FDR + bootstrap CI + rug)
 % =========================================================
 
 X = X_clean(:,3:4);
@@ -136,7 +147,7 @@ nperm = 5000;
 nboot = 5000;
 n = length(y);
 
-roi_names = {'Primary Sensory Cortex','Cingulate Cortex'};
+roi_names = {'S1','Cingulate Cortex'};
 
 % =========================================================
 % OBSERVED EFFECTS
@@ -228,7 +239,15 @@ for i = 1:2
           'FaceAlpha',0.15, ...
           'EdgeColor','none');
 
-    % SIGNIFICANCE (NO EXACT P-VALUES)
+    % ---------------- BOOTSTRAP RUG ----------------
+    rug_y = yl(1) + 0.02*(yl(2)-yl(1));
+    plot(boot_r(:,i), ...
+         repmat(rug_y,size(boot_r(:,i))), ...
+         '.', ...
+         'Color',[1 0 0], ...
+         'MarkerSize',8);
+
+    % significance
     if p_fdr(i) < 0.001
         sig = 'P < 0.001 ***';
     elseif p_fdr(i) < 0.01
@@ -251,7 +270,5 @@ for i = 1:2
 end
 
 sgtitle('Control: Brain–behavior relationship (FDR + bootstrap CI)');
-
-end
 
 sgtitle('INB: Brain–behavior relationship (FDR + bootstrap CI)');
