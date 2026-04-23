@@ -1,0 +1,103 @@
+%% ----------- SETUP SUBJECTS -----------
+
+missing_subjects = [1, 9, 35];
+total_subjects = 47;
+valid_subjects = setdiff(1:total_subjects, missing_subjects);
+num_subjects = length(valid_subjects);
+
+%% ----------- ROI GROUPS -----------
+
+roi_groups.premotor      = [7];
+roi_groups.supplementary = [26];
+roi_groups.sensory       = [17];
+roi_groups.cingulate     = [29 30];
+roi_groups.insula        = [34];
+roi_groups.dlPFC         = [3 4];
+
+group_names = fieldnames(roi_groups);
+num_groups = length(group_names);
+
+%% ----------- LOAD DATA -----------
+
+bold_all = cell(num_subjects, 1);
+
+subject_idx = 0;
+
+for subj = valid_subjects
+    
+    subject_idx = subject_idx + 1;
+    subj_str = sprintf('%02d', subj);
+    
+    file_task2 = ['ROIs_sub_' subj_str '_task2.mat'];
+    data = load(file_task2);
+    
+    bold = data.bold_data; % 184 x 48
+    
+    group_ts = zeros(size(bold,1), num_groups);
+    
+    for g = 1:num_groups
+        roi_idx = roi_groups.(group_names{g});
+        group_ts(:,g) = mean(bold(:, roi_idx), 2, 'omitnan');
+    end
+    
+    bold_all{subject_idx} = group_ts;
+end
+
+%% ----------- OUTLIER DETECTION (IMPORTANT PART) -----------
+
+% measure variability per subject (simple robust metric)
+subject_var = zeros(num_subjects,1);
+
+for s = 1:num_subjects
+    ts = bold_all{s};
+    
+    % global variance across all ROIs and time
+    subject_var(s) = mean(var(ts,0,1));
+end
+
+% z-score across subjects
+z_var = (subject_var - mean(subject_var)) / std(subject_var);
+
+% detect outlier (you said: 1 outlier → we remove strongest one)
+[~, worst_subject] = max(abs(z_var));
+
+fprintf('Removing subject %d (outlier, z=%.2f)\n', ...
+    valid_subjects(worst_subject), z_var(worst_subject));
+
+% remove it
+bold_all(worst_subject) = [];
+valid_subjects(worst_subject) = [];
+num_subjects = num_subjects - 1;
+
+%% ----------- SPAGHETTI PLOT -----------
+
+figure('Color','w','Position',[100 100 1400 800]);
+
+tiledlayout(2,3,'Padding','compact','TileSpacing','compact');
+
+colors = lines(num_subjects);
+
+for g = 1:num_groups
+    
+    nexttile;
+    hold on;
+    
+    all_ts = [];
+    
+    for s = 1:num_subjects
+        
+        ts = bold_all{s}(:, g);
+        all_ts(:,s) = ts;
+        
+        plot(ts, 'Color', [colors(s,:) 0.35], 'LineWidth', 1);
+    end
+    
+    % mean
+    plot(mean(all_ts,2,'omitnan'), 'k', 'LineWidth', 3);
+    
+    title(group_names{g}, 'FontWeight','bold');
+    xlabel('Time (TR)');
+    ylabel('BOLD');
+    box on;
+    
+end
