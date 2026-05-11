@@ -78,7 +78,7 @@ for g = 1:num_groups
     beta_val = b_simple(2);
     sigstar = reg_stars{g};
 
-    % p formatting (UPDATED: uses n.s.)
+    % p formatting
     if p_simple < 0.001
         p_text = 'p < 0.001';
     elseif p_simple < 0.01
@@ -89,7 +89,7 @@ for g = 1:num_groups
         p_text = 'n.s.';
     end
 
-    % ---------------- FIXED NAMING ONLY ----------------
+    % region names
     plot_names = {
         'Premotor cortex', ...
         'SMA', ...
@@ -100,7 +100,6 @@ for g = 1:num_groups
     };
 
     pname = plot_names{g};
-    % ---------------------------------------------------
 
     % bold only significant
     if p_simple < 0.05
@@ -115,8 +114,8 @@ for g = 1:num_groups
         'FontWeight', font_weight, ...
         'HorizontalAlignment', 'center');
 
-    xlabel(pname, 'FontSize', 14);
-    ylabel('Physical Effort Scale (Residualized)', 'FontSize', 14);
+    xlabel(sprintf('BOLD %s (Residualized)', pname), 'FontSize', 14);
+    ylabel('PES scores (Residualized)', 'FontSize', 14);
 
     box on;
     set(gca, 'FontSize', 13, 'LineWidth', 1.5);
