@@ -1,0 +1,221 @@
+missing_subjects = [1, 9, 35];
+total_subjects = 47;
+
+valid_subjects = setdiff(1:total_subjects, missing_subjects);
+num_subjects = length(valid_subjects);
+
+% ----------- ROI DEFINITIONS (NO "cingulate" ANYWHERE) -----------
+
+roi_groups.premotor      = 7;
+roi_groups.supplementary = 26;
+roi_groups.sensory       = 17;
+roi_groups.ACC           = 29;
+roi_groups.PCC           = 30;
+roi_groups.insula        = 34;
+roi_groups.dlPFC         = [3, 4];
+
+group_names = fieldnames(roi_groups);
+num_groups = length(group_names);
+
+% ----------- LOAD DATA -----------
+
+bold_task2 = nan(num_subjects, num_groups);
+
+subject_idx = 0;
+
+for subj = 1:total_subjects
+
+    if ismember(subj, missing_subjects)
+        continue;
+    end
+
+    subject_idx = subject_idx + 1;
+    subj_str = sprintf('%02d', subj);
+
+    file_task2 = ['ROIs_sub_' subj_str '_task2.mat'];
+    data2 = load(file_task2);
+
+    bold2 = data2.bold_data;
+
+    for g = 1:num_groups
+
+        roi_indices = roi_groups.(group_names{g});
+
+        bold_task2(subject_idx, g) = mean(bold2(:, roi_indices), 'all', 'omitnan');
+
+    end
+end
+
+% ----------- BEHAVIOR + MOTION -----------
+
+if ~exist('pes_totals','var')
+    error('Missing pes_totals');
+end
+
+if ~exist('head','var')
+    error('Missing head motion data');
+end
+
+head_task2 = head(:,2);
+
+% ----------- OUTLIERS -----------
+
+threshold = 3;
+outlier_mask = any(abs(bold_task2) > threshold, 2);
+
+X_clean = bold_task2(~outlier_mask, :);
+y_clean = pes_totals(~outlier_mask);
+head_clean = head_task2(~outlier_mask);
+
+fprintf('Removed %d outliers\n', sum(outlier_mask));
+
+% ----------- NORMALIZATION -----------
+
+X_norm = (X_clean - mean(X_clean)) ./ std(X_clean);
+head_norm = (head_clean - mean(head_clean)) ./ std(head_clean);
+head_norm = head_norm(:);
+
+% ----------- REGRESSION -----------
+
+X_reg = [ones(size(X_norm,1),1), X_norm, head_norm];
+
+[b,~,~,~,stats] = regress(y_clean, X_reg);
+
+n = size(X_reg,1);
+p = size(X_reg,2);
+df = n - p;
+
+residuals = y_clean - X_reg*b;
+
+% ----------- PERMUTATION TEST -----------
+
+num_permutations = 10000;
+perm_betas = zeros(num_permutations, num_groups);
+
+for i = 1:num_permutations
+
+    y_perm = y_clean(randperm(n));
+    b_perm = regress(y_perm, X_reg);
+
+    perm_betas(i,:) = b_perm(2:1+num_groups)';
+
+end
+
+observed_betas = b(2:1+num_groups);
+
+p_perm = zeros(1, num_groups);
+
+for g = 1:num_groups
+    p_perm(g) = mean(abs(perm_betas(:,g)) >= abs(observed_betas(g)));
+end
+
+% ----------- HOLM CORRECTION -----------
+
+[p_sorted, idx] = sort(p_perm);
+m = num_groups;
+
+holm_sorted = zeros(size(p_sorted));
+
+for k = 1:m
+    holm_sorted(k) = min(1, (m - k + 1) * p_sorted(k));
+end
+
+for k = 2:m
+    holm_sorted(k) = max(holm_sorted(k), holm_sorted(k-1));
+end
+
+p_perm_holm = zeros(size(p_perm));
+p_perm_holm(idx) = holm_sorted;
+
+% ----------- SAFE LABEL FUNCTION (NO STRUCT / NO MAP) -----------
+
+get_name = @(x) ...
+    switch_case(x);
+
+function out = switch_case(x)
+    switch x
+        case 'premotor'
+            out = 'Premotor';
+        case 'supplementary'
+            out = 'SMA';
+        case 'sensory'
+            out = 'Sensory';
+        case 'ACC'
+            out = 'ACC';
+        case 'PCC'
+            out = 'PCC';
+        case 'insula'
+            out = 'Insula';
+        case 'dlPFC'
+            out = 'dlPFC';
+        otherwise
+            error(['UNKNOWN ROI NAME: ' x]);
+    end
+end
+
+% ----------- PLOT -----------
+
+figure('Color','w','Position',[100 100 1600 900]);
+
+for g = 1:num_groups
+
+    subplot(2,3,g);
+
+    x = X_norm(:,g);
+    y = y_clean;
+
+    ctrl_vars = setdiff(1:num_groups, g);
+    X_ctrl = [X_norm(:,ctrl_vars), head_norm];
+    X_ctrl_aug = [ones(n,1), X_ctrl];
+
+    resid_x = x - X_ctrl_aug*(X_ctrl_aug\x);
+    resid_y = y - X_ctrl_aug*(X_ctrl_aug\y);
+
+    b_simple = regress(resid_y, [ones(n,1), resid_x]);
+
+    x_fit = linspace(min(resid_x), max(resid_x), 100)';
+    y_fit = b_simple(1) + b_simple(2)*x_fit;
+
+    % CI
+    resid_fit = resid_y - (b_simple(1) + b_simple(2)*resid_x);
+    s_err = sqrt(sum(resid_fit.^2)/(n-2));
+
+    x_mean = mean(resid_x);
+    Sxx = sum((resid_x - x_mean).^2);
+
+    se_fit = s_err * sqrt(1/n + (x_fit - x_mean).^2 / Sxx);
+    t_val = tinv(0.975, n-2);
+
+    ci_up = y_fit + t_val*se_fit;
+    ci_low = y_fit - t_val*se_fit;
+
+    % -------- ACC / PCC COLORS --------
+
+    if strcmp(group_names{g}, 'ACC')
+        c = [0.85 0.2 0.2];
+    elseif strcmp(group_names{g}, 'PCC')
+        c = [0.2 0.4 0.9];
+    else
+        c = [0.2 0.2 0.2];
+    end
+
+    fill([x_fit; flipud(x_fit)], [ci_up; flipud(ci_low)], c, ...
+        'FaceAlpha', 0.15, 'EdgeColor', 'none');
+    hold on;
+
+    plot(x_fit, y_fit, 'Color', c, 'LineWidth', 2.5);
+
+    scatter(resid_x, resid_y, 80, 'filled', ...
+        'MarkerFaceColor', c, 'MarkerFaceAlpha', 0.7);
+
+    title(get_name(group_names{g}), 'FontSize', 16, 'FontWeight', 'bold');
+
+    xlabel('ROI (residualized)');
+    ylabel('PES (residualized)');
+
+    box on;
+    set(gca,'FontSize',13);
+
+    hold off;
+
+end
