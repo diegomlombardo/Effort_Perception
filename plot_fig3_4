@@ -13,6 +13,7 @@ for g = 1:num_groups
     left = left_start + (col - 1)*(panel_w + h_spacing);
     bottom = bottom_start - (row - 1)*(panel_h + v_spacing);
 
+    % axes
     ax = axes('Position', [left, bottom, panel_w, panel_h], 'Color', 'w');
     hold on;
 
@@ -52,19 +53,21 @@ for g = 1:num_groups
     ci_upper = y_fit + t_val*se_fit;
     ci_lower = y_fit - t_val*se_fit;
 
-    % --- confidence band ---
+    % confidence interval
     fill([x_fit; flipud(x_fit)], [ci_upper; flipud(ci_lower)], ...
         [0.75 0.85 0.95], 'EdgeColor', 'none', 'FaceAlpha', 0.28);
 
+    % regression line
     plot(x_fit, y_fit, 'Color', [0 0.2 0.6], 'LineWidth', 2.8);
 
+    % scatter
     scatter(resid_x, resid_y, 110, ...
         'MarkerFaceColor', [0.85 0.33 0.1], ...
         'MarkerEdgeColor', [0.85 0.33 0.1], ...
         'MarkerFaceAlpha', 0.5, ...
         'LineWidth', 1.8);
 
-    % --- stats ---
+    % stats
     r_simple = corr(resid_x, resid_y);
     R2_simple = r_simple^2;
 
@@ -75,7 +78,7 @@ for g = 1:num_groups
     beta_val = b_simple(2);
     sigstar = reg_stars{g};
 
-    % -------- FIXED P-VALUE FORMATTING --------
+    % p formatting (UPDATED: uses n.s.)
     if p_simple < 0.001
         p_text = 'p < 0.001';
     elseif p_simple < 0.01
@@ -86,9 +89,20 @@ for g = 1:num_groups
         p_text = 'n.s.';
     end
 
-    pname = pretty_names(group_names{g});
+    % ---------------- FIXED NAMING ONLY ----------------
+    plot_names = {
+        'Premotor cortex', ...
+        'SMA', ...
+        'S1', ...
+        'Cingulate cortex', ...
+        'Insula', ...
+        'dlPFC'
+    };
 
-    % --- bold only significant effects ---
+    pname = plot_names{g};
+    % ---------------------------------------------------
+
+    % bold only significant
     if p_simple < 0.05
         font_weight = 'bold';
     else
@@ -106,10 +120,10 @@ for g = 1:num_groups
 
     box on;
     set(gca, 'FontSize', 13, 'LineWidth', 1.5);
+
     grid off;
-
     hold off;
-
 end
 
+% final figure background fix
 set(gcf, 'Color', 'w');
