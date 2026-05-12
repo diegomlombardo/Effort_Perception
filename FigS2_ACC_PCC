@@ -1,10 +1,11 @@
+
 missing_subjects = [1, 9, 35];
 total_subjects = 47;
 
 valid_subjects = setdiff(1:total_subjects, missing_subjects);
 num_subjects = length(valid_subjects);
 
-% ----------- ROI DEFINITIONS (NO "cingulate" ANYWHERE) -----------
+% ----------- ROI DEFINITIONS -----------
 
 roi_groups.premotor      = 7;
 roi_groups.supplementary = 26;
@@ -48,14 +49,6 @@ end
 
 % ----------- BEHAVIOR + MOTION -----------
 
-if ~exist('pes_totals','var')
-    error('Missing pes_totals');
-end
-
-if ~exist('head','var')
-    error('Missing head motion data');
-end
-
 head_task2 = head(:,2);
 
 % ----------- OUTLIERS -----------
@@ -75,21 +68,20 @@ X_norm = (X_clean - mean(X_clean)) ./ std(X_clean);
 head_norm = (head_clean - mean(head_clean)) ./ std(head_clean);
 head_norm = head_norm(:);
 
+n = size(X_norm,1);
+
 % ----------- REGRESSION -----------
 
-X_reg = [ones(size(X_norm,1),1), X_norm, head_norm];
+X_reg = [ones(n,1), X_norm, head_norm];
 
 [b,~,~,~,stats] = regress(y_clean, X_reg);
 
-n = size(X_reg,1);
-p = size(X_reg,2);
-df = n - p;
-
-residuals = y_clean - X_reg*b;
+num_groups = size(X_norm,2);
 
 % ----------- PERMUTATION TEST -----------
 
 num_permutations = 10000;
+
 perm_betas = zeros(num_permutations, num_groups);
 
 for i = 1:num_permutations
@@ -127,39 +119,13 @@ end
 p_perm_holm = zeros(size(p_perm));
 p_perm_holm(idx) = holm_sorted;
 
-% ----------- SAFE LABEL FUNCTION (NO STRUCT / NO MAP) -----------
-
-get_name = @(x) ...
-    switch_case(x);
-
-function out = switch_case(x)
-    switch x
-        case 'premotor'
-            out = 'Premotor';
-        case 'supplementary'
-            out = 'SMA';
-        case 'sensory'
-            out = 'Sensory';
-        case 'ACC'
-            out = 'ACC';
-        case 'PCC'
-            out = 'PCC';
-        case 'insula'
-            out = 'Insula';
-        case 'dlPFC'
-            out = 'dlPFC';
-        otherwise
-            error(['UNKNOWN ROI NAME: ' x]);
-    end
-end
-
 % ----------- PLOT -----------
 
 figure('Color','w','Position',[100 100 1600 900]);
 
 for g = 1:num_groups
 
-    subplot(2,3,g);
+    subplot(3,3,g);
 
     x = X_norm(:,g);
     y = y_clean;
@@ -171,12 +137,29 @@ for g = 1:num_groups
     resid_x = x - X_ctrl_aug*(X_ctrl_aug\x);
     resid_y = y - X_ctrl_aug*(X_ctrl_aug\y);
 
+    % -------- SIMPLE REGRESSION --------
+
     b_simple = regress(resid_y, [ones(n,1), resid_x]);
+
+    y_pred = b_simple(1) + b_simple(2)*resid_x;
+
+    % -------- R² --------
+
+    SS_res = sum((resid_y - y_pred).^2);
+    SS_tot = sum((resid_y - mean(resid_y)).^2);
+    R2 = 1 - SS_res/SS_tot;
+
+    % -------- p-value --------
+
+    r = corr(resid_x, resid_y);
+    t_stat = r * sqrt((n-2)/(1-r^2));
+    p_val = 2*(1 - tcdf(abs(t_stat), n-2));
+
+    % -------- CI --------
 
     x_fit = linspace(min(resid_x), max(resid_x), 100)';
     y_fit = b_simple(1) + b_simple(2)*x_fit;
 
-    % CI
     resid_fit = resid_y - (b_simple(1) + b_simple(2)*resid_x);
     s_err = sqrt(sum(resid_fit.^2)/(n-2));
 
@@ -184,12 +167,12 @@ for g = 1:num_groups
     Sxx = sum((resid_x - x_mean).^2);
 
     se_fit = s_err * sqrt(1/n + (x_fit - x_mean).^2 / Sxx);
-    t_val = tinv(0.975, n-2);
+    t_val_ci = tinv(0.975, n-2);
 
-    ci_up = y_fit + t_val*se_fit;
-    ci_low = y_fit - t_val*se_fit;
+    ci_up = y_fit + t_val_ci*se_fit;
+    ci_low = y_fit - t_val_ci*se_fit;
 
-    % -------- ACC / PCC COLORS --------
+    % -------- COLORS --------
 
     if strcmp(group_names{g}, 'ACC')
         c = [0.85 0.2 0.2];
@@ -198,6 +181,8 @@ for g = 1:num_groups
     else
         c = [0.2 0.2 0.2];
     end
+
+    % -------- PLOT --------
 
     fill([x_fit; flipud(x_fit)], [ci_up; flipud(ci_low)], c, ...
         'FaceAlpha', 0.15, 'EdgeColor', 'none');
@@ -208,7 +193,30 @@ for g = 1:num_groups
     scatter(resid_x, resid_y, 80, 'filled', ...
         'MarkerFaceColor', c, 'MarkerFaceAlpha', 0.7);
 
-    title(get_name(group_names{g}), 'FontSize', 16, 'FontWeight', 'bold');
+    % -------- LABEL --------
+
+    roi_name = group_names{g};
+
+    if strcmp(roi_name, 'premotor')
+        pname = 'Premotor';
+    elseif strcmp(roi_name, 'supplementary')
+        pname = 'SMA';
+    elseif strcmp(roi_name, 'sensory')
+        pname = 'Sensory';
+    elseif strcmp(roi_name, 'ACC')
+        pname = 'ACC';
+    elseif strcmp(roi_name, 'PCC')
+        pname = 'PCC';
+    elseif strcmp(roi_name, 'insula')
+        pname = 'Insula';
+    elseif strcmp(roi_name, 'dlPFC')
+        pname = 'dlPFC';
+    else
+        pname = roi_name;
+    end
+
+    title(sprintf('%s\nR^2 = %.3f | p = %.3f', pname, R2, p_val), ...
+        'FontSize', 14, 'FontWeight', 'bold');
 
     xlabel('ROI (residualized)');
     ylabel('PES (residualized)');
