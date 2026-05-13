@@ -44,6 +44,12 @@ Summary
 
 Overall, this repository provides a complete and reproducible analysis pipeline linking brain activity to subjective effort perception while rigorously controlling for motor output and motion-related confounds. The combination of regression modeling, cross-validation, and permutation-based statistics ensures robust inference about the neural basis of perceived physical effort.
 
+Escential codes: 
+
+
+
+plot_figs2_3_Main_Manuscritp
+
 Author
 
 Diego Lombardo
