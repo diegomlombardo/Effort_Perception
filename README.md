@@ -44,11 +44,13 @@ Summary
 
 Overall, this repository provides a complete and reproducible analysis pipeline linking brain activity to subjective effort perception while rigorously controlling for motor output and motion-related confounds. The combination of regression modeling, cross-validation, and permutation-based statistics ensures robust inference about the neural basis of perceived physical effort.
 
-Escential codes: 
+Essential scripts:
+
+Model_Experimental_task_Fig2 reproduces the regression analyses presented in Figure 2 of the manuscript, examining the prediction of PES scores from BOLD fMRI activity during the experimental task. Model_Control_task_Fig3 reproduces the predictive models for the control conditions presented in Figure 3.
+
+"plot_figs2_3_Main_Manuscritp" make the plots for both coditions
 
 
-
-plot_figs2_3_Main_Manuscritp
 
 Author
 
