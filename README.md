@@ -3,7 +3,7 @@ Neural Signatures of Physical Effort Valuation
 
 This repository contains the full analysis pipeline for the study “Behavioral tendencies toward physical effort shape neural encoding of effort signals in sensory and cingulate cortices” by Diego-Martin Lombardo, Florian Marchand, Florian Malaussena, Alexandre Krainik, Emilie Cousin, Boris Cheval, Matthieu Boisgontier, Benjamin Pageaux, Aurélien Delphin, Johan Pietras, and Florian Monjo.
 
-The project investigates how subjective perception of physical effort, quantified as Perceived Effort Scores (PES), relates to task-based fMRI activity. The main objective is to determine whether stable, trait-like neural signatures of perceived effort can be identified, and whether these signals are independent from confounding factors such as head motion and actual force production.
+The project investigates how subjective perception of physical effort, quantified as Perceived Effort Scores (PES), relates to task-based fMRI activity. The main objective is to determine whether stable, trait-like neural signatures of effort vaulation can be identified, and whether these signals are independent from confounding factors such as head motion and actual force production.
 
 All raw neuroimaging and behavioral data used in this study are publicly available on Zenodo at https://doi.org/10.5281/zenodo.17238287
 . In addition to this dataset, the repository requires the file behavioral_fMRIFD_data.mat, which contains Perceived Effort Scores, framewise displacement (head motion), and behavioral metadata for 44 participants.
