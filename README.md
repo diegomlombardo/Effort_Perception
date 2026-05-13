@@ -50,7 +50,7 @@ Model_Experimental_task_Fig2 reproduces the regression analyses presented in Fig
 
 "plot_figs2_3_Main_Manuscritp" make the plots for both coditions
 
-
+"LOSO_cross_validation_Figure_S4" run the LOSSO cross-validation and the code
 
 Author
 
