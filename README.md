@@ -27,7 +27,7 @@ Descriptive statistics and group-level summaries are generated in the Table_S1 s
 
 The essential scripts to reproduce the main results are Model_Experimental_task_Fig2, which reproduces the regression analyses for Figure 2, Model_Control_task_Fig3, which reproduces the control condition analyses for Figure 3, plot_figs2_3_Main_Manuscript, which generates the main figures for both conditions, LOSO_cross_validation_Figure_S4, which performs cross-validation analyses, Fig_S3, which runs partial correlation analyses with permutation testing and bootstrap confidence intervals while controlling for force, Fig_S2_ACC_Vs_PCC, which dissociates ACC and PCC contributions within the cingulate model, and RegressionModel_INB_Control_Table_S5, which tests the full combined model and computes variance inflation factors to assess multicollinearity.
 
-Overall, this repository provides a fully reproducible analysis pipeline linking subjective physical effort perception to brain activity measured with fMRI. The analyses carefully control for motor output and motion-related confounds and combine regression modeling, permutation-based statistics, and cross-validation to ensure robust inference about the neural basis of perceived valuation.
+Overall, this repository provides a fully reproducible analysis pipeline linking subjective physical effort valuation to brain activity measured with BOLD fMRI. The analyses carefully control for motor output and motion-related confounds and combine regression modeling, permutation-based statistics, and cross-validation to ensure robust inference about the neural basis of perceived valuation.
 
 Author
 
