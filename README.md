@@ -54,7 +54,11 @@ Model_Experimental_task_Fig2 reproduces the regression analyses presented in Fig
 
 "Fig S3" This MATLAB script performs a partial correlation analysis between brain measures and behavior, using permutation testing, FDR correction, and bootstrap confidence intervals, and visualizes the results for two brain regions (S1 and cingulate cortex), with force measured inside the scanner used as a control variable for the partial correlations between ROI activity and PES.
 
+"Fig_S2_ACC_Vs_PCC" this script implement the model that disociate the specific contribution of ACC and PCC in the model beyond the cingulate-Meta ROI construct and plot the multiple regresion model in INB
+
 "RegressionModel_INB_Control_Table_S5" this code is test wheter the resutls holds by using all the predictors for INB and Control task in the same model using PES as outcome variable, variable infaltion was measures to tets colinarity. 
+
+
 
 
 Author
