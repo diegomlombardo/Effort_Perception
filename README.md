@@ -50,7 +50,12 @@ Model_Experimental_task_Fig2 reproduces the regression analyses presented in Fig
 
 "plot_figs2_3_Main_Manuscritp" make the plots for both coditions
 
-"LOSO_cross_validation_Figure_S4" run the LOSSO cross-validation and the code
+"LOSO_cross_validation_Figure_S4" run the LOSSO cross-validation and the code (internal cross-validation)
+
+"Fig S3" This MATLAB script performs a partial correlation analysis between brain measures and behavior, using permutation testing, FDR correction, and bootstrap confidence intervals, and visualizes the results for two brain regions (S1 and cingulate cortex), with force measured inside the scanner used as a control variable for the partial correlations between ROI activity and PES.
+
+"RegressionModel_INB_Control_Table_S5" this code is test wheter the resutls holds by using all the predictors for INB and Control task in the same model using PES as outcome variable, variable infaltion was measures to tets colinarity. 
+
 
 Author
 
