@@ -5,12 +5,12 @@ This repository contains the full analysis pipeline for the study “Behavioral 
 
 The project investigates how subjective perception of physical effort, quantified as Perceived Effort Scores (PES), relates to task-based fMRI activity. The main objective is to determine whether stable, trait-like neural signatures of effort vaulation can be identified, and whether these signals are independent from confounding factors such as head motion and actual force production.
 
-All raw neuroimaging and behavioral data used in this study are publicly available on Zenodo at https://doi.org/10.5281/zenodo.17238287
+All raw neuroimaging and behavioral data used in this study are publicly available on Zenodo at https://doi.org/10.5281/zenodo.20265708
 In addition to this dataset, the repository requires the file behavioral_fMRIFD_data.mat, which contains Perceived Effort Scores, framewise displacement (head motion), and behavioral metadata for 44 participants.
 
 The analysis pipeline is implemented in MATLAB and R and covers behavioral processing, ROI-based fMRI signal extraction, statistical modeling, and figure generation. The workflow begins with preprocessing and extraction of region-specific BOLD signals, followed by linear regression models where PES is the main outcome variable. Head motion is included as a covariate in all relevant analyses to ensure that results are not driven by movement-related artifacts. Across scripts, statistical inference relies on permutation testing, Holm–Bonferroni correction for multiple comparisons, and partial Spearman correlations to isolate the unique contribution of each brain region while accounting for other ROIs and motion parameters.
 
-Download the file “behavioral_fMRIFD_data.mat”, which contains PES scores, head movement data, and the full fMRI BOLD timeseries in .mat files (data structure explained in the Zenodo repository), from: https://doi.org/10.5281/zenodo.17238287
+Download the file “behavioral_fMRIFD_data.mat”, which contains PES scores, head movement data, and the full fMRI BOLD timeseries in .mat files (data structure explained in the Zenodo repository), from: https://doi.org/10.5281/zenodo.20265708
 Then, run the MATLAB scripts from the main (home) directory using the subject-specific fMRI dataset, having the behavioral measures of PES and head motion data already loaded into the workspace
 
 The main regression analyses are implemented in the scripts "RegressionModel_INB_Control_together" table S5, Model_Control_task, and Model_Experimental_task. The first script runs the full multivariate regression framework combining all ROIs and conditions and produces the main brain–behavior association results reported in the manuscript. The control and experimental task scripts apply the same modeling strategy separately for each condition. Statistical significance is assessed using permutation testing and corrected using Holm–Bonferroni procedures.
