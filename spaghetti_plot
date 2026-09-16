@@ -101,3 +101,1293 @@ for g = 1:num_groups
     box on;
     
 end
+
+
+
+Now the spaghetti plot focused on M1
+
+%% ============================================================
+% M1 SPAGHETTI PLOT — INB
+%
+% M1 = ROI 7 — Precentral Gyrus
+%
+% DATA:
+%   184 BOLD time points
+%   TR = 2.5 seconds
+%
+% TASK:
+%   Initial rest       = 17 seconds
+%   Movement           = 15 seconds
+%   Rest               = 25 seconds
+%   Number movements   = 12
+%
+% OUTLIER REMOVAL:
+%   Subject-level MAD based on mean BOLD activity
+%   PLUS temporal-spike MAD detection
+%
+% IMPORTANT:
+%   Outlier subjects are completely excluded from:
+%       1. spaghetti lines
+%       2. group mean
+%       3. y-axis calculation
+%
+% FIGURE:
+%   Green shading = Movement period
+%   Gray shading  = Rest period
+%
+%   No "plot()" function is used.
+%   Curves are drawn with "line()".
+%
+% ============================================================
+
+
+%% ============================================================
+% 1. ROI
+% ============================================================
+
+M1_ROI = 7;
+
+roi_name = 'M1 - Precentral Gyrus';
+
+
+%% ============================================================
+% 2. TIME PARAMETERS
+% ============================================================
+
+TR = 2.5;
+
+total_time_points = 184;
+
+
+%% ============================================================
+% 3. TASK PARAMETERS
+% ============================================================
+
+initial_rest_sec = 17;
+
+movement_sec = 15;
+
+interblock_rest_sec = 25;
+
+num_movements = 12;
+
+
+% Convert task durations to acquired TRs
+
+initial_rest_TRs = ...
+    round(initial_rest_sec / TR);
+
+movement_TRs = ...
+    round(movement_sec / TR);
+
+interblock_rest_TRs = ...
+    round(interblock_rest_sec / TR);
+
+
+%% ============================================================
+% 4. OUTLIER PARAMETERS
+% ============================================================
+
+outlier_threshold = 3.0;
+
+
+%% ============================================================
+% 5. SUBJECT LIST
+% ============================================================
+
+if ~exist('valid_subjects','var')
+
+    missing_subjects = [1 9 35];
+
+    total_subjects = 47;
+
+    valid_subjects = ...
+        setdiff(1:total_subjects,missing_subjects);
+
+end
+
+
+num_subjects = ...
+    length(valid_subjects);
+
+
+%% ============================================================
+% 6. LOAD DATA
+% ============================================================
+
+fprintf('\n');
+fprintf('============================================\n');
+fprintf('LOADING M1 DATA — INB\n');
+fprintf('============================================\n');
+
+
+all_data = cell(num_subjects,1);
+
+
+for s = 1:num_subjects
+
+
+    subj = valid_subjects(s);
+
+
+    %% --------------------------------------------------------
+    % Subject string
+    % ---------------------------------------------------------
+
+    if subj < 10
+
+        subj_str = ...
+            ['0' num2str(subj)];
+
+    else
+
+        subj_str = ...
+            num2str(subj);
+
+    end
+
+
+    %% --------------------------------------------------------
+    % Filename
+    % ---------------------------------------------------------
+
+    filename = ...
+        ['ROIs_sub_' subj_str '_task2.mat'];
+
+
+    fprintf( ...
+        'Loading subject %d: %s\n', ...
+        subj, ...
+        filename ...
+        );
+
+
+    %% --------------------------------------------------------
+    % Check file
+    % ---------------------------------------------------------
+
+    if ~isfile(filename)
+
+        error( ...
+            ['File not found: ' filename] ...
+            );
+
+    end
+
+
+    %% --------------------------------------------------------
+    % Load
+    % ---------------------------------------------------------
+
+    loaded = ...
+        load(filename);
+
+
+    %% --------------------------------------------------------
+    % Check bold_data
+    % ---------------------------------------------------------
+
+    if ~isfield(loaded,'bold_data')
+
+        error( ...
+            ['bold_data not found in ' filename] ...
+            );
+
+    end
+
+
+    current_data = ...
+        loaded.bold_data;
+
+
+    %% --------------------------------------------------------
+    % Check ROI number
+    % ---------------------------------------------------------
+
+    if size(current_data,2) ~= 48
+
+        error( ...
+            ['Subject %d has %d ROIs. ' ...
+             'Expected 48.'], ...
+             subj, ...
+             size(current_data,2) ...
+             );
+
+    end
+
+
+    %% --------------------------------------------------------
+    % CRITICAL:
+    % EXACTLY 184 TIME POINTS
+    % ---------------------------------------------------------
+
+    if size(current_data,1) ~= total_time_points
+
+        error( ...
+            ['Subject %d has %d time points. ' ...
+             'Expected exactly 184.'], ...
+             subj, ...
+             size(current_data,1) ...
+             );
+
+    end
+
+
+    %% --------------------------------------------------------
+    % Store
+    % ---------------------------------------------------------
+
+    all_data{s} = ...
+        current_data;
+
+
+end
+
+
+fprintf('\n');
+
+fprintf( ...
+    'All subjects loaded.\n' ...
+    );
+
+fprintf( ...
+    'Number of subjects: %d\n', ...
+    num_subjects ...
+    );
+
+fprintf( ...
+    'Number of BOLD time points: %d\n', ...
+    total_time_points ...
+    );
+
+
+%% ============================================================
+% 7. EXTRACT M1 TIME SERIES
+% ============================================================
+
+% Rows = 184 BOLD time points
+%
+% Columns = subjects
+
+all_subjects_ts = ...
+    NaN(total_time_points,num_subjects);
+
+
+for s = 1:num_subjects
+
+    all_subjects_ts(:,s) = ...
+        all_data{s}(:,M1_ROI);
+
+end
+
+
+%% ============================================================
+% 8. SUBJECT-LEVEL MEAN BOLD ACTIVITY
+% ============================================================
+
+subject_mean = ...
+    NaN(1,num_subjects);
+
+
+for s = 1:num_subjects
+
+
+    current_values = ...
+        all_subjects_ts(:,s);
+
+
+    current_values = ...
+        current_values(~isnan(current_values));
+
+
+    if ~isempty(current_values)
+
+        subject_mean(s) = ...
+            mean(current_values);
+
+    end
+
+end
+
+
+%% ============================================================
+% 9. MAD OUTLIER DETECTION — SUBJECT MEAN
+% ============================================================
+
+valid_means = ...
+    subject_mean(~isnan(subject_mean));
+
+
+median_mean = ...
+    median(valid_means);
+
+
+absolute_deviation_mean = ...
+    abs(valid_means - median_mean);
+
+
+mean_MAD = ...
+    median(absolute_deviation_mean);
+
+
+mean_outliers = ...
+    false(1,num_subjects);
+
+
+if mean_MAD > 0
+
+
+    modified_z_mean = ...
+        0.6745 .* ...
+        (subject_mean - median_mean) ./ ...
+        mean_MAD;
+
+
+    mean_outliers = ...
+        abs(modified_z_mean) > ...
+        outlier_threshold;
+
+end
+
+
+%% ============================================================
+% 10. TEMPORAL MEDIAN TIME SERIES
+% ============================================================
+
+% Median across subjects at every TR
+
+temporal_median = ...
+    NaN(total_time_points,1);
+
+
+for t = 1:total_time_points
+
+
+    values = ...
+        all_subjects_ts(t,:);
+
+
+    values = ...
+        values(~isnan(values));
+
+
+    if ~isempty(values)
+
+        temporal_median(t) = ...
+            median(values);
+
+    end
+
+end
+
+
+%% ============================================================
+% 11. SUBJECT MAXIMUM TEMPORAL DEVIATION
+% ============================================================
+
+subject_max_deviation = ...
+    NaN(1,num_subjects);
+
+
+for s = 1:num_subjects
+
+
+    deviations = ...
+        abs( ...
+            all_subjects_ts(:,s) - ...
+            temporal_median ...
+            );
+
+
+    deviations = ...
+        deviations(~isnan(deviations));
+
+
+    if ~isempty(deviations)
+
+        subject_max_deviation(s) = ...
+            max(deviations);
+
+    end
+
+end
+
+
+%% ============================================================
+% 12. MAD OUTLIER DETECTION — TEMPORAL SPIKES
+% ============================================================
+
+valid_max_deviation = ...
+    subject_max_deviation( ...
+        ~isnan(subject_max_deviation) ...
+        );
+
+
+median_max_deviation = ...
+    median(valid_max_deviation);
+
+
+max_deviation_MAD = ...
+    median( ...
+        abs( ...
+            valid_max_deviation - ...
+            median_max_deviation ...
+            ) ...
+        );
+
+
+temporal_outliers = ...
+    false(1,num_subjects);
+
+
+if max_deviation_MAD > 0
+
+
+    modified_z_temporal = ...
+        0.6745 .* ...
+        ( ...
+        subject_max_deviation - ...
+        median_max_deviation ...
+        ) ./ ...
+        max_deviation_MAD;
+
+
+    temporal_outliers = ...
+        abs(modified_z_temporal) > ...
+        outlier_threshold;
+
+end
+
+
+%% ============================================================
+% 13. FINAL OUTLIER CLASSIFICATION
+% ============================================================
+
+% A subject is excluded if it is:
+%
+%   1. an outlier according to mean BOLD activity
+%
+% OR
+%
+%   2. an outlier because of an extreme temporal spike
+
+outlier_subjects = ...
+    mean_outliers | temporal_outliers;
+
+
+num_outliers = ...
+    sum(outlier_subjects);
+
+
+num_remaining = ...
+    sum(~outlier_subjects);
+
+
+%% ============================================================
+% 14. REPORT OUTLIERS
+% ============================================================
+
+fprintf('\n');
+fprintf('============================================\n');
+fprintf('M1 OUTLIER DETECTION\n');
+fprintf('============================================\n');
+
+fprintf( ...
+    'ROI: %d (%s)\n', ...
+    M1_ROI, ...
+    roi_name ...
+    );
+
+fprintf( ...
+    'MAD threshold: %.2f\n', ...
+    outlier_threshold ...
+    );
+
+
+if any(outlier_subjects)
+
+
+    fprintf('\nSubjects removed:\n');
+
+
+    for s = 1:num_subjects
+
+
+        if outlier_subjects(s)
+
+
+            fprintf( ...
+                'Subject %d', ...
+                valid_subjects(s) ...
+                );
+
+
+            if mean_outliers(s)
+
+                fprintf(' [mean MAD]');
+
+            end
+
+
+            if temporal_outliers(s)
+
+                fprintf(' [temporal spike MAD]');
+
+            end
+
+
+            fprintf('\n');
+
+
+        end
+
+    end
+
+
+else
+
+
+    fprintf('\nNo outlier subjects detected.\n');
+
+
+end
+
+
+%% ============================================================
+% 15. REMOVE OUTLIER SUBJECTS
+% ============================================================
+
+% ONLY NON-OUTLIER SUBJECTS REMAIN
+
+cleaned_data = ...
+    all_subjects_ts(:,~outlier_subjects);
+
+
+%% ============================================================
+% 16. GROUP MEAN
+% ============================================================
+
+% Group mean is calculated ONLY from retained subjects.
+
+group_mean = ...
+    NaN(total_time_points,1);
+
+
+for t = 1:total_time_points
+
+
+    values = ...
+        cleaned_data(t,:);
+
+
+    values = ...
+        values(~isnan(values));
+
+
+    if ~isempty(values)
+
+        group_mean(t) = ...
+            mean(values);
+
+    end
+
+end
+
+
+%% ============================================================
+% 17. CHECK FINAL DATA
+% ============================================================
+
+remaining_values = ...
+    cleaned_data(:);
+
+
+remaining_values = ...
+    remaining_values(~isnan(remaining_values));
+
+
+fprintf('\n');
+fprintf('============================================\n');
+fprintf('FINAL DATA\n');
+fprintf('============================================\n');
+
+fprintf( ...
+    'Subjects before removal: %d\n', ...
+    num_subjects ...
+    );
+
+fprintf( ...
+    'Subjects removed: %d\n', ...
+    num_outliers ...
+    );
+
+fprintf( ...
+    'Subjects retained: %d\n', ...
+    num_remaining ...
+    );
+
+fprintf( ...
+    'Maximum retained BOLD value: %.3f\n', ...
+    max(remaining_values) ...
+    );
+
+fprintf( ...
+    'Minimum retained BOLD value: %.3f\n', ...
+    min(remaining_values) ...
+    );
+
+
+%% ============================================================
+% 18. TASK STRUCTURE
+% ============================================================
+
+contraction_mask = ...
+    false(1,total_time_points);
+
+
+rest_mask = ...
+    false(1,total_time_points);
+
+
+current_TR = 1;
+
+
+%% ============================================================
+% 19. INITIAL REST — 17 SECONDS
+% ============================================================
+
+initial_rest_start = ...
+    current_TR;
+
+
+initial_rest_end = ...
+    min( ...
+        current_TR + initial_rest_TRs - 1, ...
+        total_time_points ...
+        );
+
+
+rest_mask( ...
+    initial_rest_start:initial_rest_end ...
+    ) = true;
+
+
+current_TR = ...
+    initial_rest_end + 1;
+
+
+%% ============================================================
+% 20. 12 MOVEMENT PERIODS
+% ============================================================
+
+for c = 1:num_movements
+
+
+    %% --------------------------------------------------------
+    % Movement period
+    % ---------------------------------------------------------
+
+    if current_TR > total_time_points
+
+        break;
+
+    end
+
+
+    movement_start = ...
+        current_TR;
+
+
+    movement_end = ...
+        min( ...
+            current_TR + movement_TRs - 1, ...
+            total_time_points ...
+            );
+
+
+    contraction_mask( ...
+        movement_start:movement_end ...
+        ) = true;
+
+
+    current_TR = ...
+        movement_end + 1;
+
+
+    %% --------------------------------------------------------
+    % Rest after movement
+    % ---------------------------------------------------------
+
+    if c < num_movements && ...
+       current_TR <= total_time_points
+
+
+        rest_start = ...
+            current_TR;
+
+
+        rest_end = ...
+            min( ...
+                current_TR + ...
+                interblock_rest_TRs - 1, ...
+                total_time_points ...
+                );
+
+
+        rest_mask( ...
+            rest_start:rest_end ...
+            ) = true;
+
+
+        current_TR = ...
+            rest_end + 1;
+
+    end
+
+end
+
+
+%% ============================================================
+% 21. REPORT TASK STRUCTURE
+% ============================================================
+
+fprintf('\n');
+fprintf('============================================\n');
+fprintf('TASK STRUCTURE\n');
+fprintf('============================================\n');
+
+fprintf( ...
+    'Initial rest: %d TRs (%.1f s)\n', ...
+    initial_rest_TRs, ...
+    initial_rest_TRs * TR ...
+    );
+
+fprintf( ...
+    'Movement: %d TRs (%.1f s)\n', ...
+    movement_TRs, ...
+    movement_TRs * TR ...
+    );
+
+fprintf( ...
+    'Inter-movement rest: %d TRs (%.1f s)\n', ...
+    interblock_rest_TRs, ...
+    interblock_rest_TRs * TR ...
+    );
+
+fprintf( ...
+    'Number of movements: %d\n', ...
+    num_movements ...
+    );
+
+
+%% ============================================================
+% 22. X AXIS
+% ============================================================
+
+x = ...
+    1:total_time_points;
+
+
+%% ============================================================
+% 23. Y LIMITS
+% ============================================================
+
+% IMPORTANT:
+%
+% Y-axis is calculated ONLY from retained subjects.
+%
+% Therefore removed subjects cannot influence
+% the visual scale.
+
+y_values = ...
+    cleaned_data(:);
+
+
+y_values = ...
+    y_values(~isnan(y_values));
+
+
+y_min = ...
+    min(y_values);
+
+
+y_max = ...
+    max(y_values);
+
+
+y_range = ...
+    y_max - y_min;
+
+
+if y_range == 0
+
+    y_range = 1;
+
+end
+
+
+plot_y_min = ...
+    y_min - 0.05*y_range;
+
+
+plot_y_max = ...
+    y_max + 0.05*y_range;
+
+
+%% ============================================================
+% 24. CREATE FIGURE
+% ============================================================
+
+figure( ...
+    'Color','w', ...
+    'Units','pixels', ...
+    'Position',[200 150 1200 700] ...
+    );
+
+
+ax = axes;
+
+
+hold(ax,'on');
+
+
+%% ============================================================
+% 25. COLORS
+% ============================================================
+
+subject_color = ...
+    [0.35 0.45 0.55];
+
+
+movement_color = ...
+    [0.72 0.90 0.72];
+
+
+rest_color = ...
+    [0.88 0.88 0.88];
+
+
+%% ============================================================
+% 26. REST SHADING
+% ============================================================
+
+rest_changes = ...
+    diff([false rest_mask false]);
+
+
+rest_starts = ...
+    find(rest_changes == 1);
+
+
+rest_ends = ...
+    find(rest_changes == -1) - 1;
+
+
+for k = 1:length(rest_starts)
+
+
+    start_TR = ...
+        rest_starts(k);
+
+
+    end_TR = ...
+        rest_ends(k);
+
+
+    patch( ...
+        ax, ...
+        [ ...
+        start_TR-0.5 ...
+        end_TR+0.5 ...
+        end_TR+0.5 ...
+        start_TR-0.5 ...
+        ], ...
+        [ ...
+        plot_y_min ...
+        plot_y_min ...
+        plot_y_max ...
+        plot_y_max ...
+        ], ...
+        rest_color, ...
+        'EdgeColor','none', ...
+        'FaceAlpha',0.40, ...
+        'HandleVisibility','off' ...
+        );
+
+end
+
+
+%% ============================================================
+% 27. MOVEMENT SHADING
+% ============================================================
+
+movement_changes = ...
+    diff([false contraction_mask false]);
+
+
+movement_starts = ...
+    find(movement_changes == 1);
+
+
+movement_ends = ...
+    find(movement_changes == -1) - 1;
+
+
+for k = 1:length(movement_starts)
+
+
+    start_TR = ...
+        movement_starts(k);
+
+
+    end_TR = ...
+        movement_ends(k);
+
+
+    patch( ...
+        ax, ...
+        [ ...
+        start_TR-0.5 ...
+        end_TR+0.5 ...
+        end_TR+0.5 ...
+        start_TR-0.5 ...
+        ], ...
+        [ ...
+        plot_y_min ...
+        plot_y_min ...
+        plot_y_max ...
+        plot_y_max ...
+        ], ...
+        movement_color, ...
+        'EdgeColor','none', ...
+        'FaceAlpha',0.40, ...
+        'HandleVisibility','off' ...
+        );
+
+end
+
+
+%% ============================================================
+% 28. INDIVIDUAL SUBJECT SPAGHETTI LINES
+% ============================================================
+
+% ONLY RETAINED / NON-OUTLIER SUBJECTS ARE PLOTTED.
+
+for s = 1:num_subjects
+
+
+    if outlier_subjects(s)
+
+        continue;
+
+    end
+
+
+    current_ts = ...
+        all_subjects_ts(:,s);
+
+
+    line( ...
+        ax, ...
+        x, ...
+        current_ts, ...
+        'Color',subject_color, ...
+        'LineWidth',0.9, ...
+        'HandleVisibility','off' ...
+        );
+
+end
+
+
+%% ============================================================
+% 29. GROUP MEAN
+% ============================================================
+
+% ONLY RETAINED SUBJECTS
+
+h_mean = ...
+    line( ...
+        ax, ...
+        x, ...
+        group_mean, ...
+        'Color',[0 0 0], ...
+        'LineWidth',3.0 ...
+        );
+
+
+%% ============================================================
+% 30. LEGEND HANDLES
+% ============================================================
+
+h_subject = ...
+    line( ...
+        ax, ...
+        NaN, ...
+        NaN, ...
+        'Color',subject_color, ...
+        'LineWidth',0.9 ...
+        );
+
+
+h_movement = ...
+    patch( ...
+        ax, ...
+        NaN, ...
+        NaN, ...
+        movement_color, ...
+        'EdgeColor','none', ...
+        'FaceAlpha',0.40 ...
+        );
+
+
+h_rest = ...
+    patch( ...
+        ax, ...
+        NaN, ...
+        NaN, ...
+        rest_color, ...
+        'EdgeColor','none', ...
+        'FaceAlpha',0.40 ...
+        );
+
+
+%% ============================================================
+% 31. AXIS LABELS
+% ============================================================
+
+xlabel( ...
+    ax, ...
+    'Time (TR)', ...
+    'FontName','Arial', ...
+    'FontSize',13, ...
+    'FontWeight','normal' ...
+    );
+
+
+ylabel( ...
+    ax, ...
+    'Cortical fMRI BOLD z-scored activity', ...
+    'FontName','Arial', ...
+    'FontSize',13, ...
+    'FontWeight','normal' ...
+    );
+
+
+%% ============================================================
+% 32. TITLE
+% ============================================================
+
+title( ...
+    ax, ...
+    'M1 (Precentral Gyrus)', ...
+    'FontName','Arial', ...
+    'FontSize',18, ...
+    'FontWeight','bold' ...
+    );
+
+
+%% ============================================================
+% 33. SUBTITLE
+% ============================================================
+
+subtitle( ...
+    ax, ...
+    'Cortical fMRI BOLD z-scored activity under INB', ...
+    'FontName','Arial', ...
+    'FontSize',12, ...
+    'FontWeight','bold', ...
+    'Color',[0.25 0.25 0.25] ...
+    );
+
+
+%% ============================================================
+% 34. AXIS APPEARANCE
+% ============================================================
+
+set( ...
+    ax, ...
+    'FontName','Arial', ...
+    'FontSize',11, ...
+    'LineWidth',1.1, ...
+    'TickDir','out', ...
+    'Box','off', ...
+    'XColor',[0.10 0.10 0.10], ...
+    'YColor',[0.10 0.10 0.10] ...
+    );
+
+
+xlim( ...
+    ax, ...
+    [1 total_time_points] ...
+    );
+
+
+ylim( ...
+    ax, ...
+    [plot_y_min plot_y_max] ...
+    );
+
+
+xticks( ...
+    ax, ...
+    0:10:180 ...
+    );
+
+
+%% ============================================================
+% 35. GRID
+% ============================================================
+
+ax.YGrid = ...
+    'on';
+
+
+ax.XGrid = ...
+    'off';
+
+
+ax.GridColor = ...
+    [0.85 0.85 0.85];
+
+
+ax.GridAlpha = ...
+    0.35;
+
+
+ax.Layer = ...
+    'top';
+
+
+%% ============================================================
+% 36. LEGEND
+% ============================================================
+
+legend( ...
+    ax, ...
+    [ ...
+    h_subject ...
+    h_mean ...
+    h_movement ...
+    h_rest ...
+    ], ...
+    { ...
+    'Individual subjects', ...
+    'Group mean', ...
+    'Movement period', ...
+    'Rest period' ...
+    }, ...
+    'Location','best', ...
+    'Box','off', ...
+    'FontName','Arial', ...
+    'FontSize',10 ...
+    );
+
+
+%% ============================================================
+% 37. FINISH FIGURE
+% ============================================================
+
+hold(ax,'off');
+
+
+set( ...
+    gcf, ...
+    'Renderer','painters' ...
+    );
+
+
+%% ============================================================
+% 38. SAVE FIGURE — FIG
+% ============================================================
+
+saveas( ...
+    gcf, ...
+    'M1_INB_Spaghetti_Plot.fig' ...
+    );
+
+
+%% ============================================================
+% 39. SAVE HIGH-RESOLUTION PNG
+% ============================================================
+
+print( ...
+    gcf, ...
+    'M1_INB_Spaghetti_Plot.png', ...
+    '-dpng', ...
+    '-r600' ...
+    );
+
+
+%% ============================================================
+% 40. SAVE VECTOR PDF
+% ============================================================
+
+print( ...
+    gcf, ...
+    'M1_INB_Spaghetti_Plot.pdf', ...
+    '-dpdf', ...
+    '-painters' ...
+    );
+
+
+%% ============================================================
+% 41. FINAL MESSAGE
+% ============================================================
+
+fprintf('\n');
+fprintf('============================================\n');
+fprintf('M1 INB SPAGHETTI PLOT COMPLETED\n');
+fprintf('============================================\n');
+
+fprintf('ROI: M1 (ROI 7)\n');
+
+fprintf('Condition: INB\n');
+
+fprintf('BOLD time points: %d\n',total_time_points);
+
+fprintf('TR: %.2f seconds\n',TR);
+
+fprintf( ...
+    'Subjects before removal: %d\n', ...
+    num_subjects ...
+    );
+
+fprintf( ...
+    'Subjects removed: %d\n', ...
+    num_outliers ...
+    );
+
+fprintf( ...
+    'Subjects plotted: %d\n', ...
+    num_remaining ...
+    );
+
+fprintf('\n');
+
+fprintf( ...
+    'Maximum retained BOLD value: %.3f\n', ...
+    max(remaining_values) ...
+    );
+
+fprintf( ...
+    'Minimum retained BOLD value: %.3f\n', ...
+    min(remaining_values) ...
+    );
+
+fprintf('\n');
+
+fprintf('Files saved:\n');
+
+fprintf( ...
+    'M1_INB_Spaghetti_Plot.fig\n' ...
+    );
+
+fprintf( ...
+    'M1_INB_Spaghetti_Plot.png (600 dpi)\n' ...
+    );
+
+fprintf( ...
+    'M1_INB_Spaghetti_Plot.pdf (vector)\n' ...
+    );
+
+fprintf('============================================\n');
