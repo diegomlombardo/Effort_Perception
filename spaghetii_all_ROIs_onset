@@ -1,0 +1,1207 @@
+%% ========================================================================
+%  SIX ROIs OF INTEREST — INB
+%
+%  ROIs:
+%       dlPFC      = ROIs 3 + 4
+%       Insula     = ROI 2
+%       Premotor   = ROI 7
+%       SMA        = ROI 26
+%       M1         = ROI 7
+%       S1         = ROI 17
+%
+%  TASK:
+%       Initial rest       = 17 s
+%       Movement           = 15 s
+%       Interblock rest    = 25 s
+%       Number movements   = 12
+%
+%  DATA:
+%       184 BOLD time points
+%       TR = 2.5 s
+%
+%  FIGURE:
+%       Green shading       = intended movement
+%       Gray shading        = rest
+%       Vertical red line   = intended movement onset
+%       Black line          = group mean
+%       Red circles         = detected post-onset BOLD peak
+%
+%  PEAK DETECTION:
+%       Peaks are identified relative to movement onset.
+%       Search window:
+%           4 s after onset --> 15 s after onset
+%
+%       This accounts for the delayed BOLD response.
+%
+% ========================================================================
+
+
+clear;
+clc;
+close all;
+
+
+%% ========================================================================
+% 1. SUBJECTS
+% ========================================================================
+
+missing_subjects = [1 9 35];
+
+total_subjects = 47;
+
+valid_subjects = setdiff(1:total_subjects,missing_subjects);
+
+num_subjects = length(valid_subjects);
+
+
+%% ========================================================================
+% 2. ROIs OF INTEREST
+% ========================================================================
+
+% Template ROI numbers
+
+roi_groups.dlPFC     = [3 4];
+roi_groups.Insula    = [2];
+roi_groups.Premotor  = [7];
+roi_groups.SMA       = [26];
+roi_groups.M1        = [7];
+roi_groups.S1        = [17];
+
+
+group_names = fieldnames(roi_groups);
+
+num_groups = length(group_names);
+
+
+%% ========================================================================
+% 3. ROI DISPLAY NAMES
+% ========================================================================
+
+roi_display_names = { ...
+    'dlPFC', ...
+    'Insula', ...
+    'Premotor', ...
+    'SMA', ...
+    'M1', ...
+    'S1'};
+
+
+%% ========================================================================
+% 4. TIME PARAMETERS
+% ========================================================================
+
+TR = 2.5;
+
+total_time_points = 184;
+
+time_sec = (0:total_time_points-1) .* TR;
+
+
+%% ========================================================================
+% 5. TASK PARAMETERS
+% ========================================================================
+
+initial_rest_sec = 17;
+
+movement_sec = 15;
+
+interblock_rest_sec = 25;
+
+num_movements = 12;
+
+
+%% ========================================================================
+% 6. PEAK DETECTION PARAMETERS
+% ========================================================================
+
+% Because the BOLD response is delayed relative to the
+% intended movement, do NOT search for the peak exactly
+% at movement onset.
+%
+% Here we search between:
+%
+%       4 seconds after onset
+%       and
+%       15 seconds after onset
+
+peak_search_start_sec = 4;
+
+peak_search_end_sec = 15;
+
+
+%% ========================================================================
+% 7. CONVERT TASK TIMING TO TR
+% ========================================================================
+
+initial_rest_TRs = round(initial_rest_sec / TR);
+
+movement_TRs = round(movement_sec / TR);
+
+interblock_rest_TRs = round(interblock_rest_sec / TR);
+
+
+fprintf('\n');
+fprintf('============================================\n');
+fprintf('TASK TIMING\n');
+fprintf('============================================\n');
+
+fprintf('TR: %.2f s\n',TR);
+
+fprintf('Initial rest: %d TRs = %.1f s\n', ...
+    initial_rest_TRs, ...
+    initial_rest_TRs*TR);
+
+fprintf('Movement: %d TRs = %.1f s\n', ...
+    movement_TRs, ...
+    movement_TRs*TR);
+
+fprintf('Interblock rest: %d TRs = %.1f s\n', ...
+    interblock_rest_TRs, ...
+    interblock_rest_TRs*TR);
+
+fprintf('Number of intended movements: %d\n', ...
+    num_movements);
+
+fprintf('Total acquisition: %.1f s\n', ...
+    total_time_points*TR);
+
+fprintf('============================================\n');
+
+
+%% ========================================================================
+% 8. LOAD DATA
+% ========================================================================
+
+fprintf('\n');
+fprintf('============================================\n');
+fprintf('LOADING DATA\n');
+fprintf('============================================\n');
+
+
+% Each cell:
+%
+%       time x 6 ROIs
+
+bold_all = cell(num_subjects,1);
+
+
+for s = 1:num_subjects
+
+    subj = valid_subjects(s);
+
+    subj_str = sprintf('%02d',subj);
+
+    filename = ...
+        ['ROIs_sub_' subj_str '_task2.mat'];
+
+
+    fprintf('Loading subject %02d: %s\n', ...
+        subj,filename);
+
+
+    if ~isfile(filename)
+
+        error('File not found: %s',filename);
+
+    end
+
+
+    loaded = load(filename);
+
+
+    if ~isfield(loaded,'bold_data')
+
+        error( ...
+            'bold_data not found in %s', ...
+            filename);
+
+    end
+
+
+    bold = loaded.bold_data;
+
+
+    if size(bold,2) ~= 48
+
+        error( ...
+            'Subject %d has %d ROIs. Expected 48.', ...
+            subj,size(bold,2));
+
+    end
+
+
+    if size(bold,1) ~= total_time_points
+
+        error( ...
+            ['Subject %d has %d time points. ' ...
+             'Expected exactly %d.'], ...
+             subj,size(bold,1),total_time_points);
+
+    end
+
+
+    % ------------------------------------------------------------
+    % Extract six ROI groups
+    % ------------------------------------------------------------
+
+    group_ts = NaN(total_time_points,num_groups);
+
+
+    for g = 1:num_groups
+
+        roi_idx = roi_groups.(group_names{g});
+
+
+        group_ts(:,g) = ...
+            mean( ...
+            bold(:,roi_idx), ...
+            2, ...
+            'omitnan');
+
+    end
+
+
+    bold_all{s} = group_ts;
+
+end
+
+
+fprintf('\nAll subjects loaded successfully.\n');
+
+
+%% ========================================================================
+% 9. SUBJECT-LEVEL OUTLIER DETECTION
+% ========================================================================
+%
+% This follows your previous approach:
+%
+%   - Calculate mean variance across the six ROIs
+%   - Z-score across subjects
+%   - Remove the strongest outlier
+%
+% ========================================================================
+
+subject_var = NaN(num_subjects,1);
+
+
+for s = 1:num_subjects
+
+    ts = bold_all{s};
+
+    roi_variance = ...
+        var(ts,0,1,'omitnan');
+
+    subject_var(s) = ...
+        mean(roi_variance,'omitnan');
+
+end
+
+
+z_var = ...
+    (subject_var - mean(subject_var,'omitnan')) ./ ...
+    std(subject_var,'omitnan');
+
+
+[~,worst_subject] = ...
+    max(abs(z_var));
+
+
+outlier_subject = ...
+    valid_subjects(worst_subject);
+
+
+fprintf('\n');
+fprintf('============================================\n');
+fprintf('OUTLIER\n');
+fprintf('============================================\n');
+
+fprintf( ...
+    'Removing subject %02d\n', ...
+    outlier_subject);
+
+fprintf( ...
+    'Variance z-score = %.2f\n', ...
+    z_var(worst_subject));
+
+
+% Remove outlier
+
+bold_all(worst_subject) = [];
+
+valid_subjects(worst_subject) = [];
+
+num_subjects = num_subjects - 1;
+
+
+fprintf( ...
+    'Subjects remaining = %d\n', ...
+    num_subjects);
+
+fprintf('============================================\n');
+
+
+%% ========================================================================
+% 10. TASK TIMING MASKS
+% ========================================================================
+
+movement_mask = false(1,total_time_points);
+
+rest_mask = false(1,total_time_points);
+
+
+% Store intended movement onset TRs
+
+movement_onset_TR = NaN(1,num_movements);
+
+movement_onset_sec = NaN(1,num_movements);
+
+
+% Start after initial rest
+
+current_TR = initial_rest_TRs + 1;
+
+
+%% ========================================================================
+% 11. CREATE MOVEMENT BLOCKS
+% ========================================================================
+
+for m = 1:num_movements
+
+    % ------------------------------------------------------------
+    % Check whether this movement onset is within acquisition
+    % ------------------------------------------------------------
+
+    if current_TR > total_time_points
+
+        break;
+
+    end
+
+
+    % ------------------------------------------------------------
+    % Movement onset
+    % ------------------------------------------------------------
+
+    movement_onset_TR(m) = current_TR;
+
+    movement_onset_sec(m) = ...
+        (current_TR - 1) * TR;
+
+
+    % ------------------------------------------------------------
+    % Movement period
+    % ------------------------------------------------------------
+
+    movement_start = current_TR;
+
+
+    movement_end = min( ...
+        current_TR + movement_TRs - 1, ...
+        total_time_points);
+
+
+    movement_mask( ...
+        movement_start:movement_end) = true;
+
+
+    % ------------------------------------------------------------
+    % Move to next block
+    % ------------------------------------------------------------
+
+    current_TR = movement_end + 1;
+
+
+    % ------------------------------------------------------------
+    % Interblock rest
+    % ------------------------------------------------------------
+
+    if m < num_movements && ...
+            current_TR <= total_time_points
+
+
+        rest_start = current_TR;
+
+
+        rest_end = min( ...
+            current_TR + interblock_rest_TRs - 1, ...
+            total_time_points);
+
+
+        rest_mask( ...
+            rest_start:rest_end) = true;
+
+
+        current_TR = rest_end + 1;
+
+    end
+
+end
+
+
+%% ========================================================================
+% 12. REMOVE MOVEMENT ONSETS THAT ARE OUTSIDE DATA
+% ========================================================================
+
+valid_onsets = ...
+    ~isnan(movement_onset_TR) & ...
+    movement_onset_TR <= total_time_points;
+
+
+movement_onset_TR = ...
+    movement_onset_TR(valid_onsets);
+
+
+movement_onset_sec = ...
+    movement_onset_sec(valid_onsets);
+
+
+n_valid_movements = ...
+    length(movement_onset_TR);
+
+
+fprintf('\n');
+fprintf('============================================\n');
+fprintf('MOVEMENT ONSETS\n');
+fprintf('============================================\n');
+
+
+for m = 1:n_valid_movements
+
+    fprintf( ...
+        'Movement %02d: TR %03d | %.1f s\n', ...
+        m, ...
+        movement_onset_TR(m), ...
+        movement_onset_sec(m));
+
+end
+
+
+fprintf('============================================\n');
+
+
+%% ========================================================================
+% 13. PREPARE CLEAN DATA MATRIX
+% ========================================================================
+
+% Convert cells into:
+%
+%       time x subject x ROI
+
+clean_data = NaN( ...
+    total_time_points, ...
+    num_subjects, ...
+    num_groups);
+
+
+for s = 1:num_subjects
+
+    clean_data(:,s,:) = ...
+        bold_all{s};
+
+end
+
+
+%% ========================================================================
+% 14. CALCULATE GROUP MEANS
+% ========================================================================
+
+group_mean = NaN( ...
+    total_time_points, ...
+    num_groups);
+
+
+for g = 1:num_groups
+
+    group_mean(:,g) = ...
+        mean( ...
+        clean_data(:,:,g), ...
+        2, ...
+        'omitnan');
+
+end
+
+
+%% ========================================================================
+% 15. PEAK DETECTION
+% ========================================================================
+%
+% For every ROI and every movement:
+%
+%   onset
+%       |
+%       |---- 4 s ----|
+%                      |
+%                   SEARCH
+%                      |
+%                      |--------- 15 s --------|
+%
+% The maximum group-average BOLD value within this
+% post-onset window is identified as the peak.
+%
+% This means the peak is defined relative to the
+% intended movement onset, rather than simply searching
+% for arbitrary maxima in the entire time series.
+%
+% ========================================================================
+
+peak_TR = NaN( ...
+    num_groups, ...
+    n_valid_movements);
+
+
+peak_time_sec = NaN( ...
+    num_groups, ...
+    n_valid_movements);
+
+
+peak_value = NaN( ...
+    num_groups, ...
+    n_valid_movements);
+
+
+peak_latency_sec = NaN( ...
+    num_groups, ...
+    n_valid_movements);
+
+
+for g = 1:num_groups
+
+
+    current_mean = ...
+        group_mean(:,g);
+
+
+    for m = 1:n_valid_movements
+
+
+        onset_sec = ...
+            movement_onset_sec(m);
+
+
+        % --------------------------------------------------------
+        % Search window relative to movement onset
+        % --------------------------------------------------------
+
+        search_start_sec = ...
+            onset_sec + peak_search_start_sec;
+
+
+        search_end_sec = ...
+            onset_sec + peak_search_end_sec;
+
+
+        % Convert to available TRs
+
+        search_idx = ...
+            find( ...
+            time_sec >= search_start_sec & ...
+            time_sec <= search_end_sec);
+
+
+        % --------------------------------------------------------
+        % Only analyze if enough data exist
+        % --------------------------------------------------------
+
+        if isempty(search_idx)
+
+            continue;
+
+        end
+
+
+        % --------------------------------------------------------
+        % Values in peak search window
+        % --------------------------------------------------------
+
+        values = ...
+            current_mean(search_idx);
+
+
+        valid_values = ...
+            ~isnan(values);
+
+
+        if ~any(valid_values)
+
+            continue;
+
+        end
+
+
+        valid_idx = ...
+            search_idx(valid_values);
+
+
+        valid_values = ...
+            values(valid_values);
+
+
+        % --------------------------------------------------------
+        % Find maximum BOLD value
+        % --------------------------------------------------------
+
+        [max_value,local_idx] = ...
+            max(valid_values);
+
+
+        selected_TR = ...
+            valid_idx(local_idx);
+
+
+        % --------------------------------------------------------
+        % Store peak information
+        % --------------------------------------------------------
+
+        peak_TR(g,m) = ...
+            selected_TR;
+
+
+        peak_time_sec(g,m) = ...
+            time_sec(selected_TR);
+
+
+        peak_value(g,m) = ...
+            max_value;
+
+
+        % --------------------------------------------------------
+        % Latency relative to movement onset
+        % --------------------------------------------------------
+
+        peak_latency_sec(g,m) = ...
+            time_sec(selected_TR) - onset_sec;
+
+    end
+
+end
+
+
+%% ========================================================================
+% 16. DISPLAY PEAK INFORMATION
+% ========================================================================
+
+fprintf('\n');
+fprintf('============================================\n');
+fprintf('DETECTED BOLD PEAKS\n');
+fprintf('============================================\n');
+
+fprintf( ...
+    'Peak search window: %.1f–%.1f s after movement onset\n', ...
+    peak_search_start_sec, ...
+    peak_search_end_sec);
+
+
+for g = 1:num_groups
+
+    fprintf('\n%s\n',roi_display_names{g});
+
+    fprintf( ...
+        '--------------------------------------------\n');
+
+
+    for m = 1:n_valid_movements
+
+
+        if isnan(peak_TR(g,m))
+
+            fprintf( ...
+                'Movement %02d: no valid peak\n', ...
+                m);
+
+        else
+
+            fprintf( ...
+                'Movement %02d: onset = %.1f s | peak = %.1f s | latency = %.1f s | BOLD = %.3f\n', ...
+                m, ...
+                movement_onset_sec(m), ...
+                peak_time_sec(g,m), ...
+                peak_latency_sec(g,m), ...
+                peak_value(g,m));
+
+        end
+
+    end
+
+end
+
+
+%% ========================================================================
+% 17. CREATE FIGURE
+% ========================================================================
+
+figure( ...
+    'Color','w', ...
+    'Units','pixels', ...
+    'Position',[100 80 1500 850]);
+
+
+tiledlayout(2,3, ...
+    'Padding','compact', ...
+    'TileSpacing','compact');
+
+
+%% ========================================================================
+% 18. COLORS
+% ========================================================================
+
+subject_color = ...
+    [0.45 0.50 0.55];
+
+
+movement_color = ...
+    [0.70 0.90 0.70];
+
+
+rest_color = ...
+    [0.90 0.90 0.90];
+
+
+onset_color = ...
+    [0.85 0.15 0.15];
+
+
+peak_color = ...
+    [0.90 0.05 0.05];
+
+
+%% ========================================================================
+% 19. PLOT EACH ROI
+% ========================================================================
+
+for g = 1:num_groups
+
+
+    nexttile;
+
+    ax = gca;
+
+    hold(ax,'on');
+
+
+    %% --------------------------------------------------------------------
+    % Y limits based ONLY on retained subjects
+    % ---------------------------------------------------------------------
+
+    y_values = ...
+        clean_data(:,:,g);
+
+    y_values = ...
+        y_values(:);
+
+    y_values = ...
+        y_values(~isnan(y_values));
+
+
+    y_min = min(y_values);
+
+    y_max = max(y_values);
+
+
+    y_range = ...
+        y_max - y_min;
+
+
+    if y_range == 0
+
+        y_range = 1;
+
+    end
+
+
+    ylim(ax,[ ...
+        y_min - 0.05*y_range, ...
+        y_max + 0.05*y_range]);
+
+
+    current_ylim = ylim(ax);
+
+
+    %% --------------------------------------------------------------------
+    % REST SHADING
+    % ---------------------------------------------------------------------
+
+    rest_changes = ...
+        diff([false rest_mask false]);
+
+
+    rest_starts = ...
+        find(rest_changes == 1);
+
+
+    rest_ends = ...
+        find(rest_changes == -1) - 1;
+
+
+    for k = 1:length(rest_starts)
+
+
+        x1 = rest_starts(k) - 0.5;
+
+        x2 = rest_ends(k) + 0.5;
+
+
+        patch( ...
+            ax, ...
+            [x1 x2 x2 x1], ...
+            [ ...
+            current_ylim(1) ...
+            current_ylim(1) ...
+            current_ylim(2) ...
+            current_ylim(2)], ...
+            rest_color, ...
+            'EdgeColor','none', ...
+            'FaceAlpha',0.45, ...
+            'HandleVisibility','off');
+
+    end
+
+
+    %% --------------------------------------------------------------------
+    % MOVEMENT SHADING
+    % ---------------------------------------------------------------------
+
+    movement_changes = ...
+        diff([false movement_mask false]);
+
+
+    movement_starts = ...
+        find(movement_changes == 1);
+
+
+    movement_ends = ...
+        find(movement_changes == -1) - 1;
+
+
+    for k = 1:length(movement_starts)
+
+
+        x1 = movement_starts(k) - 0.5;
+
+        x2 = movement_ends(k) + 0.5;
+
+
+        patch( ...
+            ax, ...
+            [x1 x2 x2 x1], ...
+            [ ...
+            current_ylim(1) ...
+            current_ylim(1) ...
+            current_ylim(2) ...
+            current_ylim(2)], ...
+            movement_color, ...
+            'EdgeColor','none', ...
+            'FaceAlpha',0.45, ...
+            'HandleVisibility','off');
+
+    end
+
+
+    %% --------------------------------------------------------------------
+    % INDIVIDUAL SUBJECTS
+    % ---------------------------------------------------------------------
+
+    for s = 1:num_subjects
+
+
+        current_ts = ...
+            clean_data(:,s,g);
+
+
+        line( ...
+            ax, ...
+            1:total_time_points, ...
+            current_ts, ...
+            'Color',[subject_color 0.25], ...
+            'LineWidth',0.7, ...
+            'HandleVisibility','off');
+
+    end
+
+
+    %% --------------------------------------------------------------------
+    % GROUP MEAN
+    % ---------------------------------------------------------------------
+
+    h_mean = ...
+        line( ...
+        ax, ...
+        1:total_time_points, ...
+        group_mean(:,g), ...
+        'Color','k', ...
+        'LineWidth',2.5);
+
+
+    %% --------------------------------------------------------------------
+    % MOVEMENT ONSET LINES
+    % ---------------------------------------------------------------------
+
+    for m = 1:n_valid_movements
+
+
+        onset_TR = ...
+            movement_onset_TR(m);
+
+
+        % Vertical line at intended movement onset
+
+        xline( ...
+            ax, ...
+            onset_TR, ...
+            '--', ...
+            'Color',onset_color, ...
+            'LineWidth',1.2, ...
+            'HandleVisibility','off');
+
+    end
+
+
+    %% --------------------------------------------------------------------
+    % PEAK MARKERS
+    % ---------------------------------------------------------------------
+
+    for m = 1:n_valid_movements
+
+
+        if isnan(peak_TR(g,m))
+
+            continue;
+
+        end
+
+
+        % Red circle at detected peak
+
+        plot( ...
+            ax, ...
+            peak_TR(g,m), ...
+            peak_value(g,m), ...
+            'o', ...
+            'MarkerSize',6, ...
+            'MarkerFaceColor',peak_color, ...
+            'MarkerEdgeColor','w', ...
+            'LineWidth',0.8, ...
+            'HandleVisibility','off');
+
+
+        % --------------------------------------------------------
+        % Optional latency label
+        % --------------------------------------------------------
+
+        text( ...
+            ax, ...
+            peak_TR(g,m), ...
+            peak_value(g,m), ...
+            sprintf('  %.1fs',peak_latency_sec(g,m)), ...
+            'FontSize',7, ...
+            'Color',peak_color, ...
+            'VerticalAlignment','bottom', ...
+            'HorizontalAlignment','left', ...
+            'HandleVisibility','off');
+
+    end
+
+
+    %% --------------------------------------------------------------------
+    % AXIS LABELS
+    % ---------------------------------------------------------------------
+
+    xlabel( ...
+        ax, ...
+        'Time (TR)', ...
+        'FontSize',10);
+
+
+    ylabel( ...
+        ax, ...
+        'BOLD', ...
+        'FontSize',10);
+
+
+    %% --------------------------------------------------------------------
+    % TITLE
+    % ---------------------------------------------------------------------
+
+    title( ...
+        ax, ...
+        roi_display_names{g}, ...
+        'FontWeight','bold', ...
+        'FontSize',13);
+
+
+    %% --------------------------------------------------------------------
+    % AXIS
+    % ---------------------------------------------------------------------
+
+    xlim(ax,[1 total_time_points]);
+
+
+    set( ...
+        ax, ...
+        'FontSize',9, ...
+        'Box','off', ...
+        'TickDir','out');
+
+
+    grid(ax,'on');
+
+    ax.GridAlpha = 0.20;
+
+end
+
+
+%% ========================================================================
+% 20. OVERALL TITLE
+% ========================================================================
+
+sgtitle( ...
+    'BOLD time courses — ROIs of interest', ...
+    'FontSize',17, ...
+    'FontWeight','bold');
+
+
+%% ========================================================================
+% 21. CREATE FIGURE LEGEND
+% ========================================================================
+
+% Create invisible handles for legend
+
+h_subject = ...
+    line(NaN,NaN, ...
+    'Color',subject_color, ...
+    'LineWidth',0.8);
+
+
+h_mean = ...
+    line(NaN,NaN, ...
+    'Color','k', ...
+    'LineWidth',2.5);
+
+
+h_movement = ...
+    patch(NaN,NaN, ...
+    movement_color, ...
+    'EdgeColor','none', ...
+    'FaceAlpha',0.45);
+
+
+h_rest = ...
+    patch(NaN,NaN, ...
+    rest_color, ...
+    'EdgeColor','none', ...
+    'FaceAlpha',0.45);
+
+
+h_onset = ...
+    line(NaN,NaN, ...
+    'Color',onset_color, ...
+    'LineStyle','--', ...
+    'LineWidth',1.2);
+
+
+h_peak = ...
+    plot(NaN,NaN, ...
+    'o', ...
+    'MarkerSize',6, ...
+    'MarkerFaceColor',peak_color, ...
+    'MarkerEdgeColor','w');
+
+
+legend( ...
+    h_subject, ...
+    'Individual subjects', ...
+    'Location','best', ...
+    'Box','off');
+
+
+%% ========================================================================
+% 22. SAVE FIGURE
+% ========================================================================
+
+saveas( ...
+    gcf, ...
+    'Six_ROIs_INB_with_Movement_Onsets.fig');
+
+
+print( ...
+    gcf, ...
+    'Six_ROIs_INB_with_Movement_Onsets.png', ...
+    '-dpng', ...
+    '-r600');
+
+
+print( ...
+    gcf, ...
+    'Six_ROIs_INB_with_Movement_Onsets.pdf', ...
+    '-dpdf', ...
+    '-painters');
+
+
+%% ========================================================================
+% 23. SAVE PEAK DATA
+% ========================================================================
+
+peak_results = struct();
+
+peak_results.roi_names = roi_display_names;
+
+peak_results.movement_onset_TR = ...
+    movement_onset_TR;
+
+peak_results.movement_onset_sec = ...
+    movement_onset_sec;
+
+peak_results.peak_TR = ...
+    peak_TR;
+
+peak_results.peak_time_sec = ...
+    peak_time_sec;
+
+peak_results.peak_value = ...
+    peak_value;
+
+peak_results.peak_latency_sec = ...
+    peak_latency_sec;
+
+peak_results.peak_search_start_sec = ...
+    peak_search_start_sec;
+
+peak_results.peak_search_end_sec = ...
+    peak_search_end_sec;
+
+
+save( ...
+    'Six_ROIs_INB_Peak_Results.mat', ...
+    'peak_results');
+
+
+%% ========================================================================
+% 24. FINAL MESSAGE
+% ========================================================================
+
+fprintf('\n');
+fprintf('============================================\n');
+fprintf('ANALYSIS COMPLETED\n');
+fprintf('============================================\n');
+
+fprintf('Subjects retained: %d\n',num_subjects);
+
+fprintf('ROIs plotted: %d\n',num_groups);
+
+fprintf('Movement onsets available: %d\n',n_valid_movements);
+
+fprintf( ...
+    'Peak search window: %.1f–%.1f s after onset\n', ...
+    peak_search_start_sec, ...
+    peak_search_end_sec);
+
+fprintf('\nFiles saved:\n');
+
+fprintf('  Six_ROIs_INB_with_Movement_Onsets.fig\n');
+
+fprintf('  Six_ROIs_INB_with_Movement_Onsets.png\n');
+
+fprintf('  Six_ROIs_INB_with_Movement_Onsets.pdf\n');
+
+fprintf('  Six_ROIs_INB_Peak_Results.mat\n');
+
+fprintf('============================================\n');
