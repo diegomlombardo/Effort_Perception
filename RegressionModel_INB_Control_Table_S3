@@ -10,7 +10,7 @@ roi_groups.premotor      = [7];
 roi_groups.supplementary = [26];
 roi_groups.sensory       = [17];
 roi_groups.cingulate     = [29, 30];
-roi_groups.insula        = [34];
+roi_groups.insula        = [2];
 roi_groups.dlPFC         = [4, 5];
 
 group_names = fieldnames(roi_groups);
