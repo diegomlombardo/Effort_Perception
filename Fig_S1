@@ -229,6 +229,19 @@ set(gca, ...
     'TickDir', 'out', ...
     'Box', 'off');
 
+RESUTLS
+
+=== Final Full Cohort Model Coefficients (with p-values) ===
+ Intercept                 | Beta = +1.8023 | p = 1.882e-06
+ premotor                  | Beta = +0.1740 | p = 0.6134
+ supplementary             | Beta = -0.0978 | p = 0.7789
+ sensory                   | Beta = +1.1651 | p = 0.002324
+ cingulate                 | Beta = -1.1529 | p = 0.002216
+ insula                    | Beta = -0.1391 | p = 0.6901
+ dlPFC                     | Beta = +0.6137 | p = 0.09099
+ Motion_1                  | Beta = -0.0501 | p = 0.8798
+Unrecognized function or variable 'Simple'.
+
 grid off;
 Simple PLOT
 
