@@ -16,3 +16,65 @@ flirt -in atlas.nii.gz \
  
 
 fslmeants -i denoised_data.nii.gz  -o all_rois_timeseries.txt --label=atlas_resampled.nii.gz
+
+
+OR 
+
+# Step 1: Estimate transformation
+flirt -in atlas.nii.gz \
+      -ref denoised_data.nii.gz \
+      -out atlas2func.nii.gz \
+      -omat atlas2func.mat \
+      -dof 6 \
+      -interp nearestneighbour
+
+# Step 2: Apply transformation
+flirt -in atlas.nii.gz \
+      -ref denoised_data.nii.gz \
+      -applyxfm \
+      -init atlas2func.mat \
+      -interp nearestneighbour \
+      -out atlas_resampled.nii.gz
+
+# Step 3: Extract ROI time series
+fslmeants -i denoised_data.nii.gz \
+          -o all_rois_timeseries.txt \
+          --label=atlas_resampled.nii.gz
+
+This is a subject example
+
+# Step 4: Convert to MATLAB .mat
+python3 -c '
+import numpy as np
+from scipy.io import savemat
+
+data = np.loadtxt("all_rois_timeseries.txt")
+savemat("all_rois_timeseries.mat", {"Task1": data})
+
+print("Saved all_rois_timeseries.mat")
+print("Dimensions:", data.shape)
+'
+% Z-score each column (ROI)
+Task1_z = zeros(size(Task1));
+
+for roi = 1:size(Task1,2)
+
+    % Values for this ROI
+    x = Task1(:,roi);
+
+    % Handle NaNs using column median
+    nan_idx = isnan(x);
+
+    if any(nan_idx)
+        x(nan_idx) = median(x(~nan_idx));
+    end
+
+    % Column-wise z-score
+    mu = mean(x);
+    sigma = std(x);
+
+    Task1_z(:,roi) = (x - mu) ./ sigma;
+end
+
+% Save the result
+save('all_rois_timeseries_zscore.mat', 'Task1_z');
