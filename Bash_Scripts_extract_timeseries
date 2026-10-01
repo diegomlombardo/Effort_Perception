@@ -43,17 +43,33 @@ fslmeants -i denoised_data.nii.gz \
 
 This is a subject example
 
-# Step 4: Convert to MATLAB .mat
+# ============================================================
+# TASK 1
+# ============================================================
+
+cd Task1
+
 python3 -c '
 import numpy as np
 from scipy.io import savemat
 
 data = np.loadtxt("all_rois_timeseries.txt")
-savemat("all_rois_timeseries.mat", {"Task1": data})
 
-print("Saved all_rois_timeseries.mat")
+# Save RAW Task 1 data
+savemat("all_rois_timeseries_Task1_raw.mat", {"Task1": data})
+
+print("Saved all_rois_timeseries_Task1_raw.mat")
 print("Dimensions:", data.shape)
 '
+
+Then:
+
+% ============================================================
+% TASK 1 - Z-SCORE
+% ============================================================
+
+load('all_rois_timeseries_Task1_raw.mat', 'Task1');
+
 % Z-score each column (ROI)
 Task1_z = zeros(size(Task1));
 
@@ -73,8 +89,80 @@ for roi = 1:size(Task1,2)
     mu = mean(x);
     sigma = std(x);
 
-    Task1_z(:,roi) = (x - mu) ./ sigma;
+    if sigma == 0
+        Task1_z(:,roi) = zeros(size(x));
+    else
+        Task1_z(:,roi) = (x - mu) ./ sigma;
+    end
+
 end
 
-% Save the result
-save('all_rois_timeseries_zscore.mat', 'Task1_z');
+% Save z-scored Task 1
+save('all_rois_timeseries_Task1_zscore.mat', 'Task1_z');
+
+fprintf('Saved all_rois_timeseries_Task1_zscore.mat\n');
+fprintf('Dimensions: %d x %d\n', size(Task1_z,1), size(Task1_z,2));
+
+Then Task 2:
+
+# ============================================================
+# TASK 2
+# ============================================================
+
+cd ../Task2
+
+python3 -c '
+import numpy as np
+from scipy.io import savemat
+
+data = np.loadtxt("all_rois_timeseries.txt")
+
+# Save RAW Task 2 data
+savemat("all_rois_timeseries_Task2_raw.mat", {"Task2": data})
+
+print("Saved all_rois_timeseries_Task2_raw.mat")
+print("Dimensions:", data.shape)
+'
+
+Then:
+
+% ============================================================
+% TASK 2 - Z-SCORE
+% ============================================================
+
+load('all_rois_timeseries_Task2_raw.mat', 'Task2');
+
+% Z-score each column (ROI)
+Task2_z = zeros(size(Task2));
+
+for roi = 1:size(Task2,2)
+
+    % Values for this ROI
+    x = Task2(:,roi);
+
+    % Handle NaNs using column median
+    nan_idx = isnan(x);
+
+    if any(nan_idx)
+        x(nan_idx) = median(x(~nan_idx));
+    end
+
+    % Column-wise z-score
+    mu = mean(x);
+    sigma = std(x);
+
+    if sigma == 0
+        Task2_z(:,roi) = zeros(size(x));
+    else
+        Task2_z(:,roi) = (x - mu) ./ sigma;
+    end
+
+end
+
+% Save z-scored Task 2
+save('all_rois_timeseries_Task2_zscore.mat', 'Task2_z');
+
+fprintf('Saved all_rois_timeseries_Task2_zscore.mat\n');
+fprintf('Dimensions: %d x %d\n', size(Task2_z,1), size(Task2_z,2));
+
+So each task ends up with:
