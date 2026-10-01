@@ -49,9 +49,8 @@ This is a subject example
 
 cd Task1
 
-python3 -c '
-import numpy as np
-from scipy.io import savemat
+python3 -c 'import numpy as np; from scipy.io import savemat; data = np.loadtxt("all_rois_timeseries.txt"); savemat("all_rois_timeseries_Task1_raw.mat", {"Task1": data}); print("Saved all_rois_timeseries_Task1_raw.mat"); print("Dimensions:", data.shape)'
+
 
 data = np.loadtxt("all_rois_timeseries.txt")
 
@@ -109,9 +108,10 @@ Then Task 2:
 # TASK 2
 # ============================================================
 
+
 cd ../Task2
 
-python3 -c '
+python3 -c 
 import numpy as np
 from scipy.io import savemat
 
@@ -122,9 +122,6 @@ savemat("all_rois_timeseries_Task2_raw.mat", {"Task2": data})
 
 print("Saved all_rois_timeseries_Task2_raw.mat")
 print("Dimensions:", data.shape)
-'
-
-Then:
 
 % ============================================================
 % TASK 2 - Z-SCORE
@@ -165,4 +162,4 @@ save('all_rois_timeseries_Task2_zscore.mat', 'Task2_z');
 fprintf('Saved all_rois_timeseries_Task2_zscore.mat\n');
 fprintf('Dimensions: %d x %d\n', size(Task2_z,1), size(Task2_z,2));
 
-So each task ends up with:
+
