@@ -1,3 +1,5 @@
+A) For each subject
+
 flirt -in atlas.nii.gz \
       -ref denoised_data.nii.gz \
       -out atlas2func.nii.gz \
@@ -16,7 +18,7 @@ flirt -in atlas.nii.gz \
 
 fslmeants -i denoised_data.nii.gz  -o all_rois_timeseries.txt --label=atlas_resampled.nii.gz
 
-
+B) Now for all the cohort
 
 echo "============================================================"
 echo "ROI EXTRACTION"
