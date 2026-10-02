@@ -1,165 +1,203 @@
+#!/bin/bash
 
-flirt -in atlas.nii.gz \
-      -ref denoised_data.nii.gz \
-      -out atlas2func.nii.gz \
-      -omat atlas2func.mat \
-      -dof 6 \
-      -interp nearestneighbour
-Then apply it:
+BASE_DIR="$(pwd)"
 
+echo "============================================================"
+echo "ROI EXTRACTION"
+echo "Directory: $BASE_DIR"
+echo "Skipping: subject_01, subject_09, subject_35"
+echo "============================================================"
 
-flirt -in atlas.nii.gz \
-      -ref denoised_data.nii.gz \
-      -applyxfm -init atlas2func.mat \
-      -interp nearestneighbour \
-      -out atlas_resampled.nii.gz
- 
+# Check required commands
+if ! command -v flirt >/dev/null 2>&1; then
+    echo "ERROR: FSL/FLIRT is not available."
+    echo "Please load/source your FSL installation first."
+    exit 1
+fi
 
-fslmeants -i denoised_data.nii.gz  -o all_rois_timeseries.txt --label=atlas_resampled.nii.gz
+if ! command -v fslmeants >/dev/null 2>&1; then
+    echo "ERROR: fslmeants is not available."
+    exit 1
+fi
 
+if ! command -v python3 >/dev/null 2>&1; then
+    echo "ERROR: python3 is not available."
+    exit 1
+fi
 
-OR 
+# ------------------------------------------------------------
+# Process every subject
+# ------------------------------------------------------------
 
-# Step 1: Estimate transformation
-flirt -in atlas.nii.gz \
-      -ref denoised_data.nii.gz \
-      -out atlas2func.nii.gz \
-      -omat atlas2func.mat \
-      -dof 6 \
-      -interp nearestneighbour
+for SUBJECT_DIR in "$BASE_DIR"/subject_*; do
 
-# Step 2: Apply transformation
-flirt -in atlas.nii.gz \
-      -ref denoised_data.nii.gz \
-      -applyxfm \
-      -init atlas2func.mat \
-      -interp nearestneighbour \
-      -out atlas_resampled.nii.gz
+    [ -d "$SUBJECT_DIR" ] || continue
 
-# Step 3: Extract ROI time series
-fslmeants -i denoised_data.nii.gz \
-          -o all_rois_timeseries.txt \
-          --label=atlas_resampled.nii.gz
+    SUBJECT=$(basename "$SUBJECT_DIR")
 
-This is a subject example
+    # Skip subjects 1, 9 and 35
+    case "$SUBJECT" in
+        subject_1|subject_01|subject_9|subject_09|subject_35)
+            echo ""
+            echo "******** SKIPPING $SUBJECT ********"
+            continue
+            ;;
+    esac
 
-# ============================================================
-# TASK 1
-# ============================================================
+    echo ""
+    echo "============================================================"
+    echo "SUBJECT: $SUBJECT"
+    echo "============================================================"
 
-cd Task1
+    # --------------------------------------------------------
+    # Find every Task directory
+    # --------------------------------------------------------
 
-python3 -c 'import numpy as np; from scipy.io import savemat; data = np.loadtxt("all_rois_timeseries.txt"); savemat("all_rois_timeseries_Task1_raw.mat", {"Task1": data}); print("Saved all_rois_timeseries_Task1_raw.mat"); print("Dimensions:", data.shape)'
+    for TASK_DIR in "$SUBJECT_DIR"/Task*; do
 
+        [ -d "$TASK_DIR" ] || continue
 
-data = np.loadtxt("all_rois_timeseries.txt")
+        TASK=$(basename "$TASK_DIR")
 
-# Save RAW Task 1 data
-savemat("all_rois_timeseries_Task1_raw.mat", {"Task1": data})
+        echo ""
+        echo "------------------------------------------------------------"
+        echo "Processing: $SUBJECT / $TASK"
+        echo "------------------------------------------------------------"
 
-print("Saved all_rois_timeseries_Task1_raw.mat")
-print("Dimensions:", data.shape)
-'
+        ATLAS="$TASK_DIR/atlas.nii.gz"
+        FUNC="$TASK_DIR/denoised_data.nii.gz"
 
-Then:
+        REGISTERED_ATLAS="$TASK_DIR/atlas2func.nii.gz"
+        MATRIX="$TASK_DIR/atlas2func.mat"
+        RESAMPLED_ATLAS="$TASK_DIR/atlas_resampled.nii.gz"
+        TIMESERIES="$TASK_DIR/all_rois_timeseries.txt"
+        MATFILE="$TASK_DIR/all_rois_timeseries_${TASK}_raw.mat"
 
-% ============================================================
-% TASK 1 - Z-SCORE
-% ============================================================
+        # ----------------------------------------------------
+        # Check files
+        # ----------------------------------------------------
 
-load('all_rois_timeseries_Task1_raw.mat', 'Task1');
+        if [ ! -f "$ATLAS" ]; then
+            echo "WARNING: atlas.nii.gz missing"
+            echo "Skipping $SUBJECT / $TASK"
+            continue
+        fi
 
-% Z-score each column (ROI)
-Task1_z = zeros(size(Task1));
+        if [ ! -f "$FUNC" ]; then
+            echo "WARNING: denoised_data.nii.gz missing"
+            echo "Skipping $SUBJECT / $TASK"
+            continue
+        fi
 
-for roi = 1:size(Task1,2)
+        # ----------------------------------------------------
+        # STEP 1: Estimate transformation
+        # ----------------------------------------------------
 
-    % Values for this ROI
-    x = Task1(:,roi);
+        echo "[1/4] FLIRT registration..."
 
-    % Handle NaNs using column median
-    nan_idx = isnan(x);
+        flirt \
+            -in "$ATLAS" \
+            -ref "$FUNC" \
+            -out "$REGISTERED_ATLAS" \
+            -omat "$MATRIX" \
+            -dof 6 \
+            -interp nearestneighbour
 
-    if any(nan_idx)
-        x(nan_idx) = median(x(~nan_idx));
-    end
+        if [ $? -ne 0 ]; then
+            echo "ERROR: FLIRT registration failed"
+            echo "Skipping $SUBJECT / $TASK"
+            continue
+        fi
 
-    % Column-wise z-score
-    mu = mean(x);
-    sigma = std(x);
+        # ----------------------------------------------------
+        # STEP 2: Apply transformation
+        # ----------------------------------------------------
 
-    if sigma == 0
-        Task1_z(:,roi) = zeros(size(x));
-    else
-        Task1_z(:,roi) = (x - mu) ./ sigma;
-    end
+        echo "[2/4] Applying transformation..."
 
-end
+        flirt \
+            -in "$ATLAS" \
+            -ref "$FUNC" \
+            -applyxfm \
+            -init "$MATRIX" \
+            -interp nearestneighbour \
+            -out "$RESAMPLED_ATLAS"
 
-% Save z-scored Task 1
-save('all_rois_timeseries_Task1_zscore.mat', 'Task1_z');
+        if [ $? -ne 0 ]; then
+            echo "ERROR: Transformation failed"
+            echo "Skipping $SUBJECT / $TASK"
+            continue
+        fi
 
-fprintf('Saved all_rois_timeseries_Task1_zscore.mat\n');
-fprintf('Dimensions: %d x %d\n', size(Task1_z,1), size(Task1_z,2));
+        # ----------------------------------------------------
+        # STEP 3: Extract ROI time series
+        # ----------------------------------------------------
 
-Then Task 2:
+        echo "[3/4] Extracting ROI time series..."
 
-# ============================================================
-# TASK 2
-# ============================================================
+        fslmeants \
+            -i "$FUNC" \
+            -o "$TIMESERIES" \
+            --label="$RESAMPLED_ATLAS"
 
+        if [ $? -ne 0 ]; then
+            echo "ERROR: fslmeants failed"
+            echo "Skipping $SUBJECT / $TASK"
+            continue
+        fi
 
-cd ../Task2
+        # ----------------------------------------------------
+        # STEP 4: Convert TXT to MATLAB .mat
+        # ----------------------------------------------------
 
-python3 -c 
+        echo "[4/4] Creating MATLAB file..."
+
+        python3 - "$TIMESERIES" "$MATFILE" "$TASK" <<'PYTHON'
+import sys
 import numpy as np
 from scipy.io import savemat
 
-data = np.loadtxt("all_rois_timeseries.txt")
+txt_file = sys.argv[1]
+mat_file = sys.argv[2]
+task = sys.argv[3]
 
-# Save RAW Task 2 data
-savemat("all_rois_timeseries_Task2_raw.mat", {"Task2": data})
+try:
+    data = np.loadtxt(txt_file)
 
-print("Saved all_rois_timeseries_Task2_raw.mat")
-print("Dimensions:", data.shape)
+    # Make sure 1-dimensional data is represented consistently
+    if data.ndim == 1:
+        data = data.reshape(-1, 1)
 
-% ============================================================
-% TASK 2 - Z-SCORE
-% ============================================================
+    savemat(mat_file, {task: data})
 
-load('all_rois_timeseries_Task2_raw.mat', 'Task2');
+    print("Saved:", mat_file)
+    print("Dimensions:", data.shape)
 
-% Z-score each column (ROI)
-Task2_z = zeros(size(Task2));
+except Exception as e:
+    print("ERROR converting file:", e)
+    sys.exit(1)
+PYTHON
 
-for roi = 1:size(Task2,2)
+        if [ $? -ne 0 ]; then
+            echo "ERROR: MATLAB conversion failed"
+            continue
+        fi
 
-    % Values for this ROI
-    x = Task2(:,roi);
+        echo "SUCCESS: $SUBJECT / $TASK"
 
-    % Handle NaNs using column median
-    nan_idx = isnan(x);
+    done
 
-    if any(nan_idx)
-        x(nan_idx) = median(x(~nan_idx));
-    end
+done
 
-    % Column-wise z-score
-    mu = mean(x);
-    sigma = std(x);
+echo ""
+echo "============================================================"
+echo "FINISHED"
+echo "============================================================"
+echo "Processed subjects except:"
+echo "  subject_01"
+echo "  subject_09"
+echo "  subject_35"
+echo "============================================================"
 
-    if sigma == 0
-        Task2_z(:,roi) = zeros(size(x));
-    else
-        Task2_z(:,roi) = (x - mu) ./ sigma;
-    end
-
-end
-
-% Save z-scored Task 2
-save('all_rois_timeseries_Task2_zscore.mat', 'Task2_z');
-
-fprintf('Saved all_rois_timeseries_Task2_zscore.mat\n');
-fprintf('Dimensions: %d x %d\n', size(Task2_z,1), size(Task2_z,2));
 
 
